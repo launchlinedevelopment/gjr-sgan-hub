@@ -63,12 +63,13 @@ async function loadAll(){
     sb.from('chapter_visits').select('*').order('visit_date',{ascending:false}),
     sb.from('one_on_one_requests').select('*').order('requested_date').order('requested_start'),
     sb.from('messages').select('*').or('sender_id.eq.'+me.id+',recipient_id.eq.'+me.id).order('created_at'),
-    sb.from('program_planning_forms').select('*').order('created_at',{ascending:false})
+    sb.from('program_planning_forms').select('*').order('created_at',{ascending:false}),
+    sb.from('meeting_occurrence_notes').select('*').order('occurrence_date',{ascending:false})
   ];
   const out=await Promise.all(queries);
   state.profiles=out[0].data||[];state.councils=out[1].data||[];state.counterparts=out[2].data||[];
   state.templates=out[3].data||[];state.completions=out[4].data||[];state.meetings=out[5].data||[];
-  state.visits=out[6].data||[];state.requests=out[7].data||[];state.messages=out[8].data||[];state.programs=out[9].data||[];
+  state.visits=out[6].data||[];state.requests=out[7].data||[];state.messages=out[8].data||[];state.programs=out[9].data||[];state.meetingNotes=out[10].data||[];
 }
 
 function renderShell(){
@@ -123,10 +124,22 @@ function occurrence(m,date){
 }
 function nextOccurrences(days){
   const out=[],today=new Date();
-  for(let i=0;i<days;i++){const d=new Date(today.getFullYear(),today.getMonth(),today.getDate()+i,12);state.meetings.forEach(function(m){if(m.owner_profile_id===me.id&&occurrence(m,d))out.push({meeting:m,date:d})})}
+  for(let i=0;i<days;i++){const d=new Date(today.getFullYear(),today.getMonth(),today.getDate()+i,12);state.meetings.forEach(function(m){if((m.owner_profile_id===me.id||m.attendee_profile_id===me.id)&&occurrence(m,d))out.push({meeting:m,date:d})})}
   return out.sort(function(a,b){return iso(a.date).localeCompare(iso(b.date))||String(a.meeting.start_time).localeCompare(String(b.meeting.start_time))});
 }
-function meetingContactName(m){if(m.contact_type==='gjr_staff')return 'GJR Staff';const c=state.counterparts.find(function(x){return x.id===m.counterpart_id});return c?c.name:(m.contact_name||'')}
+function meetingContactName(m){if(m.contact_type==='gjr_staff')return 'GJR Staff';const c=state.counterparts.find(function(x){return x.id===m.counterpart_id});if(c)return c.name;if(m.attendee_profile_id){const p=profile(m.attendee_profile_id);if(p)return p.display_name}return m.contact_name||''}
+function occurrenceNote(meetingId,date){return (state.meetingNotes||[]).find(function(n){return n.meeting_id===meetingId&&n.occurrence_date===iso(date)})}
+function meetingCountWithCounterpart(counterpartId){
+  const today=new Date();today.setHours(12,0,0,0);let count=0;
+  state.meetings.filter(function(m){return m.owner_profile_id===me.id&&m.counterpart_id===counterpartId}).forEach(function(m){
+    const start=new Date(m.start_date+'T12:00:00');if(start>today)return;
+    if(m.recurrence==='none'){count+=1;return;}
+    const days=Math.floor((today-start)/86400000);
+    const step=m.recurrence==='weekly'?7:14;
+    count+=Math.floor(days/step)+1;
+  });
+  return count;
+}
 function upcomingHtml(n){const list=nextOccurrences(35).slice(0,n);if(!list.length)return '<div class="empty">Nothing upcoming.</div>';return '<div class="list">'+list.map(function(x){const m=x.meeting,contact=meetingContactName(m);return '<div class="item"><div><strong>'+esc(m.title)+'</strong><span>'+niceDate(iso(x.date))+' · '+fmtTime(m.start_time)+(m.end_time?'–'+fmtTime(m.end_time):'')+' · '+esc(m.mode)+(contact?' · with '+esc(contact):'')+(m.recurrence!=='none'?' · '+(m.recurrence==='weekly'?'Weekly':'Every other week'):'')+'</span></div><div class="actions">'+(m.url?'<a class="join" target="_blank" rel="noopener" href="'+esc(m.url)+'">Join ↗</a>':'')+'</div></div>'}).join('')+'</div>'}
 
 function scheduleHtml(){
@@ -139,7 +152,30 @@ function scheduleHtml(){
   }else{
     html+=requestOneOnOneHtml();
   }
+  html+=meetingNotesHtml();
   return html;
+}
+function meetingNotesHtml(){
+  const today=new Date();today.setHours(12,0,0,0);
+  const start=new Date(today);start.setDate(start.getDate()-30);
+  const end=new Date(today);end.setDate(end.getDate()+30);
+  const occ=[];
+  state.meetings.forEach(function(m){
+    if(m.owner_profile_id!==me.id&&m.attendee_profile_id!==me.id)return;
+    for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
+      const x=new Date(d);
+      if(occurrence(m,x))occ.push({meeting:m,date:x});
+    }
+  });
+  occ.sort(function(a,b){return iso(b.date).localeCompare(iso(a.date))||String(b.meeting.start_time).localeCompare(String(a.meeting.start_time))});
+  if(!occ.length)return '<section class="card" style="margin-top:15px"><div class="eyebrow">MEETING NOTES</div><h2>Notes by meeting</h2><div class="empty">No meetings to add notes to yet.</div></section>';
+  return '<section class="card" style="margin-top:15px"><div class="eyebrow">MEETING NOTES</div><h2>Notes by meeting</h2><div class="list">'+occ.slice(0,24).map(function(x){
+    const m=x.meeting,n=occurrenceNote(m.id,x.date),contact=meetingContactName(m),own=m.owner_profile_id===me.id;
+    return '<article class="item" style="display:block"><div><strong>'+esc(m.title)+'</strong><span>'+niceDate(iso(x.date))+' · '+fmtTime(m.start_time)+(contact?' · with '+esc(contact):'')+'</span></div>'+
+      (own?'<textarea class="meetingNoteField" data-meeting="'+m.id+'" data-date="'+iso(x.date)+'" rows="3" placeholder="Meeting notes...">'+esc(n?n.notes:'')+'</textarea><div class="actions" style="margin-top:8px"><button class="tiny-btn saveMeetingNote" data-meeting="'+m.id+'" data-date="'+iso(x.date)+'">Save notes</button></div>':
+      '<div class="status-line" style="margin-top:8px"><b>Meeting notes:</b> '+esc(n&&n.notes?n.notes:'No notes yet.')+'</div>')+
+    '</article>';
+  }).join('')+'</div></section>';
 }
 function requestOneOnOneHtml(){
   const leaders=state.profiles.filter(function(p){return p.council_id===me.council_id&&(p.role==='admin'||p.role==='council_sgan')});
@@ -163,7 +199,8 @@ function peopleHtml(){
 function counterpartCard(c){
   const initials=c.name.split(' ').map(function(x){return x[0]}).join('').slice(0,2);
   const linked=c.linked_profile_id?profile(c.linked_profile_id):null;
-  return '<article class="person-card"><div class="person-head"><div class="avatar">'+esc(initials)+'</div><div><strong>'+esc(c.name)+'</strong><span>'+esc(c.chapter)+'</span></div></div><div class="person-fields"><label>Last check-in<input class="cpField" data-id="'+c.id+'" data-field="last_check_in" type="date" value="'+(c.last_check_in||'')+'"></label><label>Next follow-up<input class="cpField" data-id="'+c.id+'" data-field="next_follow_up" type="date" value="'+(c.next_follow_up||'')+'"></label></div><label class="note-label">Notes<textarea class="cpField" data-id="'+c.id+'" data-field="notes" rows="2">'+esc(c.notes||'')+'</textarea></label><div style="margin-top:10px">'+(linked?'<span class="pill">Account: '+esc(linked.display_name)+'</span>':'<button class="primary createCp" data-id="'+c.id+'">Create their account</button>')+'</div></article>';
+  const meetingCount=meetingCountWithCounterpart(c.id);
+  return '<article class="person-card"><div class="person-head"><div class="avatar">'+esc(initials)+'</div><div><strong>'+esc(c.name)+'</strong><span>'+esc(c.chapter)+'</span></div></div><div class="status-line" style="margin:10px 0"><b>'+meetingCount+'</b> meeting'+(meetingCount===1?'':'s')+' held together</div><div class="person-fields"><label>Last check-in<input class="cpField" data-id="'+c.id+'" data-field="last_check_in" type="date" value="'+(c.last_check_in||'')+'"></label><label>Next follow-up<input class="cpField" data-id="'+c.id+'" data-field="next_follow_up" type="date" value="'+(c.next_follow_up||'')+'"></label></div><label class="note-label">Notes<textarea class="cpField" data-id="'+c.id+'" data-field="notes" rows="2">'+esc(c.notes||'')+'</textarea></label><div style="margin-top:10px">'+(linked?'<span class="pill">Account: '+esc(linked.display_name)+'</span>':'<button class="primary createCp" data-id="'+c.id+'">Create their account</button>')+'</div></article>';
 }
 
 function visitsHtml(){
@@ -226,6 +263,7 @@ function wireView(){
   const pf=document.getElementById('programForm');if(pf)pf.onsubmit=submitProgram;
   document.querySelectorAll('.openProgramPdf').forEach(function(btn){btn.onclick=async function(){const r=await sb.storage.from('program-planning-forms').createSignedUrl(btn.dataset.path,300);if(r.error){alert(r.error.message);return;}window.open(r.data.signedUrl,'_blank')}});
   document.querySelectorAll('.programDecision').forEach(function(btn){btn.onclick=async function(){const box=document.querySelector('.programFeedback[data-id="'+btn.dataset.id+'"]');const feedback=box?box.value.trim():'';if(btn.dataset.status==='needs_changes'&&!feedback){alert('Add a helpful note explaining how the program can be improved.');return;}const r=await sb.from('program_planning_forms').update({status:btn.dataset.status,council_feedback:feedback,reviewed_by:me.id,reviewed_at:new Date().toISOString()}).eq('id',btn.dataset.id);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}});
+  document.querySelectorAll('.saveMeetingNote').forEach(function(btn){btn.onclick=saveMeetingNote});
 }
 
 async function addPersonalTask(){
@@ -247,7 +285,9 @@ async function createCounterpartAccount(id){
   const email=prompt('Email for '+cp.name+':');if(!email)return;
   const password=prompt('Temporary password for '+cp.name+' (they can change it later):');if(!password)return;
   const r=await sb.functions.invoke('create-managed-user',{body:{email:email,password:password,display_name:cp.name,role:'counterpart',council_id:cp.council_id,linked_counterpart_id:cp.id}});
-  if(r.error){alert(r.error.message);return;}await loadAll();renderShell();alert('Account created for '+cp.name+'.');
+  if(r.error){alert(r.error.message);return;}
+  if(r.data&&r.data.user_id)await sb.from('meetings').update({attendee_profile_id:r.data.user_id}).eq('owner_profile_id',me.id).eq('counterpart_id',cp.id);
+  await loadAll();renderShell();alert('Account created for '+cp.name+'.');
 }
 async function createLeader(e){
   e.preventDefault();
@@ -279,7 +319,18 @@ async function submitProgram(e){
   if(r.error){alert(r.error.message);return;}
   await loadAll();renderShell();
 }
-async function addMeeting(e){e.preventDefault();const contact=v('mCounterpart');const row={council_id:me.council_id,title:v('mTitle'),mode:v('mMode'),start_date:v('mDate'),start_time:v('mStart'),end_time:v('mEnd')||null,recurrence:v('mRepeat'),url:v('mUrl'),location:v('mLocation'),owner_profile_id:me.id,counterpart_id:contact&&contact!=='__GJR_STAFF__'?contact:null,contact_type:contact==='__GJR_STAFF__'?'gjr_staff':contact?'counterpart':'none',contact_name:contact==='__GJR_STAFF__'?'GJR Staff':''};const r=await sb.from('meetings').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
+async function addMeeting(e){e.preventDefault();const contact=v('mCounterpart');const cp=contact&&contact!=='__GJR_STAFF__'?state.counterparts.find(function(x){return x.id===contact}):null;const row={council_id:me.council_id,title:v('mTitle'),mode:v('mMode'),start_date:v('mDate'),start_time:v('mStart'),end_time:v('mEnd')||null,recurrence:v('mRepeat'),url:v('mUrl'),location:v('mLocation'),owner_profile_id:me.id,counterpart_id:cp?cp.id:null,attendee_profile_id:cp&&cp.linked_profile_id?cp.linked_profile_id:null,contact_type:contact==='__GJR_STAFF__'?'gjr_staff':cp?'counterpart':'none',contact_name:contact==='__GJR_STAFF__'?'GJR Staff':cp?cp.name:''};const r=await sb.from('meetings').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
+async function saveMeetingNote(e){
+  const btn=e.currentTarget,meetingId=btn.dataset.meeting,date=btn.dataset.date;
+  const field=document.querySelector('.meetingNoteField[data-meeting="'+meetingId+'"][data-date="'+date+'"]');
+  const notes=field?field.value.trim():'';
+  const existing=occurrenceNote(meetingId,date);
+  let r;
+  if(existing)r=await sb.from('meeting_occurrence_notes').update({notes:notes,updated_at:new Date().toISOString()}).eq('id',existing.id);
+  else r=await sb.from('meeting_occurrence_notes').insert({meeting_id:meetingId,occurrence_date:date,owner_profile_id:me.id,notes:notes});
+  if(r.error){alert(r.error.message);return;}
+  await loadAll();renderShell();
+}
 async function addVisit(e){e.preventDefault();const row={council_id:me.council_id,chapter:v('vChapter'),visit_date:v('vDate'),went_well:v('vGood'),needs_help:v('vHelp'),follow_up:v('vNext'),created_by:me.id};const r=await sb.from('chapter_visits').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
 async function requestOne(e){e.preventDefault();const row={council_id:me.council_id,counterpart_profile_id:me.id,council_sgan_profile_id:v('oneLeader'),requested_date:v('oneDate'),requested_start:v('oneStart'),requested_end:v('oneEnd')||null,notes:v('oneNotes')};const r=await sb.from('one_on_one_requests').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell();alert('1:1 request sent.')}
 async function sendMessage(e){e.preventDefault();const body=v('chatText');if(!body||!activeThread)return;const r=await sb.from('messages').insert({council_id:me.council_id,sender_id:me.id,recipient_id:activeThread,body:body});if(r.error){alert(r.error.message);return;}document.getElementById('chatText').value='';await loadAll();renderShell()}
