@@ -63,10 +63,22 @@ create table if not exists meetings (
   location text default '',
   owner_profile_id uuid not null references profiles(id) on delete cascade,
   counterpart_id uuid references counterparts(id) on delete set null,
+  attendee_profile_id uuid references profiles(id) on delete set null,
   contact_type text not null default 'none' check (contact_type in ('none','counterpart','gjr_staff')),
   contact_name text default '',
+  notes text not null default '',
   visible_regionwide boolean not null default false,
   created_at timestamptz not null default now()
+);
+
+create table if not exists meeting_occurrence_notes (
+  id uuid primary key default gen_random_uuid(),
+  meeting_id uuid not null references meetings(id) on delete cascade,
+  occurrence_date date not null,
+  owner_profile_id uuid not null references profiles(id) on delete cascade,
+  notes text not null default '',
+  updated_at timestamptz not null default now(),
+  unique(meeting_id, occurrence_date)
 );
 
 create table if not exists chapter_visits (
@@ -109,6 +121,7 @@ alter table counterparts enable row level security;
 alter table check_templates enable row level security;
 alter table check_completions enable row level security;
 alter table meetings enable row level security;
+alter table meeting_occurrence_notes enable row level security;
 alter table chapter_visits enable row level security;
 alter table messages enable row level security;
 alter table one_on_one_requests enable row level security;
@@ -201,14 +214,36 @@ using (profile_id=auth.uid());
 create policy "own insert check completions" on check_completions for insert to authenticated with check (profile_id=auth.uid());
 create policy "own delete check completions" on check_completions for delete to authenticated using (profile_id=auth.uid());
 
-create policy "read own meetings" on meetings for select to authenticated
-using (owner_profile_id=auth.uid());
+create policy "read participating meetings" on meetings for select to authenticated
+using (owner_profile_id=auth.uid() or attendee_profile_id=auth.uid());
 create policy "insert own meetings" on meetings for insert to authenticated
 with check (owner_profile_id=auth.uid());
 create policy "update own meetings" on meetings for update to authenticated
 using (owner_profile_id=auth.uid()) with check (owner_profile_id=auth.uid());
 create policy "delete own meetings" on meetings for delete to authenticated
 using (owner_profile_id=auth.uid());
+
+
+create policy "meeting participants read occurrence notes" on meeting_occurrence_notes for select to authenticated
+using (exists (
+  select 1 from meetings m
+  where m.id=meeting_id and (m.owner_profile_id=auth.uid() or m.attendee_profile_id=auth.uid())
+));
+create policy "meeting owner inserts occurrence notes" on meeting_occurrence_notes for insert to authenticated
+with check (owner_profile_id=auth.uid() and exists (
+  select 1 from meetings m where m.id=meeting_id and m.owner_profile_id=auth.uid()
+));
+create policy "meeting owner updates occurrence notes" on meeting_occurrence_notes for update to authenticated
+using (owner_profile_id=auth.uid() and exists (
+  select 1 from meetings m where m.id=meeting_id and m.owner_profile_id=auth.uid()
+))
+with check (owner_profile_id=auth.uid() and exists (
+  select 1 from meetings m where m.id=meeting_id and m.owner_profile_id=auth.uid()
+));
+create policy "meeting owner deletes occurrence notes" on meeting_occurrence_notes for delete to authenticated
+using (owner_profile_id=auth.uid() and exists (
+  select 1 from meetings m where m.id=meeting_id and m.owner_profile_id=auth.uid()
+));
 
 create policy "read own chapter visits" on chapter_visits for select to authenticated
 using (created_by=auth.uid());
