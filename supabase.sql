@@ -61,6 +61,7 @@ create table if not exists meetings (
   url text default '',
   location text default '',
   owner_profile_id uuid references profiles(id) on delete set null,
+  counterpart_id uuid references counterparts(id) on delete set null,
   visible_regionwide boolean not null default false,
   created_at timestamptz not null default now()
 );
