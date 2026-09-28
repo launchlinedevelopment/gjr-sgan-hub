@@ -149,7 +149,12 @@ function requestsLeaderHtml(){
 
 function peopleHtml(){
   const cps=state.counterparts.filter(function(c){return me.role==='admin'||c.council_id===me.council_id});
-  return '<section class="hero"><div class="hero-copy"><div class="eyebrow">COUNTERPART CRM</div><h1>Know your people.</h1><p>Track check-ins, follow-ups, account access, and chapter context.</p></div></section><section class="card" style="margin-top:15px"><div class="card-head"><div><div class="eyebrow">COUNTERPARTS</div><h2>'+cps.length+' people</h2></div></div><div class="people-grid">'+cps.map(counterpartCard).join('')+'</div></section>';
+  const councilField=me.role==='admin'
+    ? '<label>Council<select id="cpCouncil">'+state.councils.map(function(c){return '<option value="'+c.id+'" '+(c.id===me.council_id?'selected':'')+'>'+esc(c.name)+' — '+esc(c.display_name)+'</option>'}).join('')+'</select></label>'
+    : '';
+  return '<section class="hero"><div class="hero-copy"><div class="eyebrow">COUNTERPART CRM</div><h1>Know your people.</h1><p>Track check-ins, follow-ups, account access, and chapter context.</p></div></section>'+
+  '<section class="card" style="margin-top:15px"><div class="card-head"><div><div class="eyebrow">ADD COUNTERPART</div><h2>Add someone to your council</h2></div></div><form id="counterpartForm" class="form-grid"><label class="wide">Full name<input id="cpName" placeholder="Counterpart name" required></label><label class="wide">Chapter<input id="cpChapter" placeholder="Chapter name" required></label>'+councilField+'<label class="wide">Notes<input id="cpNotes" placeholder="Optional notes"></label><button class="primary">Add counterpart</button></form></section>'+
+  '<section class="card" style="margin-top:15px"><div class="card-head"><div><div class="eyebrow">COUNTERPARTS</div><h2>'+cps.length+' people</h2></div></div><div class="people-grid">'+cps.map(counterpartCard).join('')+'</div></section>';
 }
 function counterpartCard(c){
   const initials=c.name.split(' ').map(function(x){return x[0]}).join('').slice(0,2);
@@ -194,6 +199,7 @@ function wireView(){
   document.querySelectorAll('.reqAction').forEach(function(btn){btn.onclick=async function(){await sb.from('one_on_one_requests').update({status:btn.dataset.status}).eq('id',btn.dataset.id);await loadAll();renderShell()}});
   const cf=document.getElementById('councilForm');if(cf)cf.onsubmit=addCouncil;
   const lf=document.getElementById('leaderForm');if(lf)lf.onsubmit=createLeader;
+  const cpf=document.getElementById('counterpartForm');if(cpf)cpf.onsubmit=addCounterpart;
 }
 
 async function createCounterpartAccount(id){
@@ -209,6 +215,15 @@ async function createLeader(e){
   if(r.error){alert(r.error.message);return;}await loadAll();renderShell();alert('Council S\'gan/S\'ganit account created.');
 }
 async function addCouncil(e){e.preventDefault();const r=await sb.from('councils').insert({name:v('cCode').toUpperCase(),display_name:v('cName')});if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
+async function addCounterpart(e){
+  e.preventDefault();
+  const councilId=me.role==='admin'?(v('cpCouncil')||me.council_id):me.council_id;
+  const row={council_id:councilId,name:v('cpName'),chapter:v('cpChapter'),notes:v('cpNotes')};
+  if(!row.name||!row.chapter){alert('Name and chapter are required.');return;}
+  const r=await sb.from('counterparts').insert(row);
+  if(r.error){alert(r.error.message);return;}
+  await loadAll();renderShell();
+}
 async function addMeeting(e){e.preventDefault();const row={council_id:me.council_id,title:v('mTitle'),mode:v('mMode'),start_date:v('mDate'),start_time:v('mStart'),end_time:v('mEnd')||null,recurrence:v('mRepeat'),url:v('mUrl'),location:v('mLocation'),owner_profile_id:me.id};const r=await sb.from('meetings').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
 async function addVisit(e){e.preventDefault();const row={council_id:me.council_id,chapter:v('vChapter'),visit_date:v('vDate'),went_well:v('vGood'),needs_help:v('vHelp'),follow_up:v('vNext'),created_by:me.id};const r=await sb.from('chapter_visits').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
 async function requestOne(e){e.preventDefault();const row={council_id:me.council_id,counterpart_profile_id:me.id,council_sgan_profile_id:v('oneLeader'),requested_date:v('oneDate'),requested_start:v('oneStart'),requested_end:v('oneEnd')||null,notes:v('oneNotes')};const r=await sb.from('one_on_one_requests').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell();alert('1:1 request sent.')}
