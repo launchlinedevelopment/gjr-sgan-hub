@@ -140,19 +140,19 @@ function meetingCountWithCounterpart(counterpartId){
   });
   return count;
 }
-function upcomingHtml(n){const list=nextOccurrences(35).slice(0,n);if(!list.length)return '<div class="empty">Nothing upcoming.</div>';return '<div class="list">'+list.map(function(x){const m=x.meeting,contact=meetingContactName(m);return '<div class="item"><div><strong>'+esc(m.title)+'</strong><span>'+niceDate(iso(x.date))+' · '+fmtTime(m.start_time)+(m.end_time?'–'+fmtTime(m.end_time):'')+' · '+esc(m.mode)+(contact?' · with '+esc(contact):'')+(m.recurrence!=='none'?' · '+(m.recurrence==='weekly'?'Weekly':'Every other week'):'')+'</span></div><div class="actions">'+(m.url?'<a class="join" target="_blank" rel="noopener" href="'+esc(m.url)+'">Join ↗</a>':'')+'</div></div>'}).join('')+'</div>'}
+function upcomingHtml(n){const list=nextOccurrences(35).slice(0,n);if(!list.length)return '<div class="empty">Nothing upcoming.</div>';return '<div class="list">'+list.map(function(x){const m=x.meeting,contact=meetingContactName(m);return '<button class="item meeting-row openMeeting" data-meeting="'+m.id+'" data-date="'+iso(x.date)+'"><div><strong>'+esc(m.title)+'</strong><span>'+niceDate(iso(x.date))+' · '+fmtTime(m.start_time)+(m.end_time?'–'+fmtTime(m.end_time):'')+' · '+esc(m.mode)+(contact?' · with '+esc(contact):'')+(m.recurrence!=='none'?' · '+(m.recurrence==='weekly'?'Weekly':'Every other week'):'')+'</span></div><div class="meeting-open">View details →</div></button>'}).join('')+'</div>'}
 
 function scheduleHtml(){
   const week=weekDays(new Date()),occ=nextOccurrences(60);
   const contacts=state.counterparts.filter(function(c){return c.council_id===me.council_id});
-  let html='<section class="card"><div class="card-head"><div><div class="eyebrow">SCHEDULE</div><h2>Your BBYO week</h2></div></div><div class="schedule-board">'+week.map(function(d){const list=occ.filter(function(x){return iso(x.date)===iso(d)});return '<div class="day-col"><h4>'+dayName(d)+' · '+(d.getMonth()+1)+'/'+d.getDate()+'</h4>'+ (list.length?list.map(function(x){const contact=meetingContactName(x.meeting);return '<div class="meeting-mini"><strong>'+esc(x.meeting.title)+'</strong><span>'+fmtTime(x.meeting.start_time)+(x.meeting.end_time?'–'+fmtTime(x.meeting.end_time):'')+(contact?' · with '+esc(contact):'')+'</span></div>'}).join(''):'<span class="muted" style="font-size:9px">Open</span>')+'</div>'}).join('')+'</div></section>';
+  let html='<section class="card"><div class="card-head"><div><div class="eyebrow">SCHEDULE</div><h2>Your BBYO week</h2></div></div><div class="schedule-board">'+week.map(function(d){const list=occ.filter(function(x){return iso(x.date)===iso(d)});return '<div class="day-col"><h4>'+dayName(d)+' · '+(d.getMonth()+1)+'/'+d.getDate()+'</h4>'+ (list.length?list.map(function(x){const contact=meetingContactName(x.meeting);return '<button class="meeting-mini openMeeting" data-meeting="'+x.meeting.id+'" data-date="'+iso(x.date)+'"><strong>'+esc(x.meeting.title)+'</strong><span>'+fmtTime(x.meeting.start_time)+(x.meeting.end_time?'–'+fmtTime(x.meeting.end_time):'')+(contact?' · with '+esc(contact):'')+'</span></button>'}).join(''):'<span class="muted" style="font-size:9px">Open</span>')+'</div>'}).join('')+'</div></section>';
   if(me.role!=='counterpart'){
     html+='<section class="card" style="margin-top:15px"><div class="eyebrow">ADD MEETING</div><h2>Build your schedule</h2><form id="meetingForm" class="form-grid"><label class="wide">Meeting name<input id="mTitle" required></label><label class="wide">Who are you meeting with?<select id="mCounterpart"><option value="">No specific contact</option><option value="__GJR_STAFF__">GJR Staff</option>'+contacts.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+' — '+esc(c.chapter)+'</option>'}).join('')+'</select></label><label>Type<select id="mMode"><option>Online</option><option>In-Person</option></select></label><label>Repeats<select id="mRepeat"><option value="none">One time</option><option value="weekly">Weekly</option><option value="biweekly">Every other week</option></select></label><label>Date<input id="mDate" type="date" required></label><label>Starts<input id="mStart" type="time" required></label><label>Ends<input id="mEnd" type="time"></label><label>Location<input id="mLocation"></label><label class="wide">Meeting link<input id="mUrl" type="url"></label><button class="primary">Add meeting</button></form></section>';
     html+=requestsLeaderHtml();
   }else{
     html+=requestOneOnOneHtml();
   }
-  html+=meetingNotesHtml();
+  html+='<div id="meetingModalHost"></div>';
   return html;
 }
 function meetingNotesHtml(){
@@ -264,6 +264,7 @@ function wireView(){
   document.querySelectorAll('.openProgramPdf').forEach(function(btn){btn.onclick=async function(){const r=await sb.storage.from('program-planning-forms').createSignedUrl(btn.dataset.path,300);if(r.error){alert(r.error.message);return;}window.open(r.data.signedUrl,'_blank')}});
   document.querySelectorAll('.programDecision').forEach(function(btn){btn.onclick=async function(){const box=document.querySelector('.programFeedback[data-id="'+btn.dataset.id+'"]');const feedback=box?box.value.trim():'';if(btn.dataset.status==='needs_changes'&&!feedback){alert('Add a helpful note explaining how the program can be improved.');return;}const r=await sb.from('program_planning_forms').update({status:btn.dataset.status,council_feedback:feedback,reviewed_by:me.id,reviewed_at:new Date().toISOString()}).eq('id',btn.dataset.id);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}});
   document.querySelectorAll('.saveMeetingNote').forEach(function(btn){btn.onclick=saveMeetingNote});
+  document.querySelectorAll('.openMeeting').forEach(function(btn){btn.onclick=function(){openMeetingModal(btn.dataset.meeting,btn.dataset.date)}});
 }
 
 async function addPersonalTask(){
@@ -320,16 +321,47 @@ async function submitProgram(e){
   await loadAll();renderShell();
 }
 async function addMeeting(e){e.preventDefault();const contact=v('mCounterpart');const cp=contact&&contact!=='__GJR_STAFF__'?state.counterparts.find(function(x){return x.id===contact}):null;const row={council_id:me.council_id,title:v('mTitle'),mode:v('mMode'),start_date:v('mDate'),start_time:v('mStart'),end_time:v('mEnd')||null,recurrence:v('mRepeat'),url:v('mUrl'),location:v('mLocation'),owner_profile_id:me.id,counterpart_id:cp?cp.id:null,attendee_profile_id:cp&&cp.linked_profile_id?cp.linked_profile_id:null,contact_type:contact==='__GJR_STAFF__'?'gjr_staff':cp?'counterpart':'none',contact_name:contact==='__GJR_STAFF__'?'GJR Staff':cp?cp.name:''};const r=await sb.from('meetings').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
-async function saveMeetingNote(e){
-  const btn=e.currentTarget,meetingId=btn.dataset.meeting,date=btn.dataset.date;
-  const field=document.querySelector('.meetingNoteField[data-meeting="'+meetingId+'"][data-date="'+date+'"]');
-  const notes=field?field.value.trim():'';
+function openMeetingModal(meetingId,date){
+  const m=state.meetings.find(function(x){return x.id===meetingId});if(!m)return;
+  const host=document.getElementById('meetingModalHost');if(!host)return;
+  const n=occurrenceNote(meetingId,date),contact=meetingContactName(m),own=m.owner_profile_id===me.id;
+  const recurrence=m.recurrence==='none'?'One time':m.recurrence==='weekly'?'Weekly':'Every other week';
+  host.innerHTML='<div class="meeting-modal-backdrop" id="meetingModalBackdrop"><section class="meeting-modal"><div class="meeting-modal-head"><div><div class="eyebrow">MEETING DETAILS</div><h2>'+esc(m.title)+'</h2></div><button class="modal-close" id="meetingModalClose">×</button></div><div class="meeting-detail-grid">'+
+    '<div class="meeting-detail"><span>Date</span><strong>'+niceDate(date)+'</strong></div>'+
+    '<div class="meeting-detail"><span>Time</span><strong>'+fmtTime(m.start_time)+(m.end_time?'–'+fmtTime(m.end_time):'')+'</strong></div>'+
+    '<div class="meeting-detail"><span>With</span><strong>'+esc(contact||'No specific contact')+'</strong></div>'+
+    '<div class="meeting-detail"><span>Type</span><strong>'+esc(m.mode)+'</strong></div>'+
+    '<div class="meeting-detail"><span>Repeats</span><strong>'+esc(recurrence)+'</strong></div>'+
+    '<div class="meeting-detail"><span>Location</span><strong>'+esc(m.location||'—')+'</strong></div>'+
+  '</div>'+
+  (m.url?'<a class="meeting-join" target="_blank" rel="noopener" href="'+esc(m.url)+'">Join meeting ↗</a>':'')+
+  '<div class="meeting-notes-panel"><div class="eyebrow">MEETING NOTES</div><h3>'+ (own?'Your notes':'Notes from the Council S\'gan') +'</h3>'+
+  (own?'<textarea id="modalMeetingNote" rows="7" placeholder="Add notes from this meeting...">'+esc(n?n.notes:'')+'</textarea><button class="primary" id="modalSaveNote">Save notes</button>':
+  '<div class="meeting-note-readonly">'+esc(n&&n.notes?n.notes:'No notes have been added yet.')+'</div>')+
+  '</div></section></div>';
+  document.getElementById('meetingModalClose').onclick=closeMeetingModal;
+  document.getElementById('meetingModalBackdrop').onclick=function(e){if(e.target.id==='meetingModalBackdrop')closeMeetingModal()};
+  const save=document.getElementById('modalSaveNote');if(save)save.onclick=async function(){
+    const notes=document.getElementById('modalMeetingNote').value.trim();
+    await saveMeetingNoteValue(meetingId,date,notes);
+    openMeetingModal(meetingId,date);
+  };
+}
+function closeMeetingModal(){const host=document.getElementById('meetingModalHost');if(host)host.innerHTML=''}
+async function saveMeetingNoteValue(meetingId,date,notes){
   const existing=occurrenceNote(meetingId,date);
   let r;
   if(existing)r=await sb.from('meeting_occurrence_notes').update({notes:notes,updated_at:new Date().toISOString()}).eq('id',existing.id);
   else r=await sb.from('meeting_occurrence_notes').insert({meeting_id:meetingId,occurrence_date:date,owner_profile_id:me.id,notes:notes});
-  if(r.error){alert(r.error.message);return;}
-  await loadAll();renderShell();
+  if(r.error){alert(r.error.message);return false;}
+  await loadAll();return true;
+}
+async function saveMeetingNote(e){
+  const btn=e.currentTarget,meetingId=btn.dataset.meeting,date=btn.dataset.date;
+  const field=document.querySelector('.meetingNoteField[data-meeting="'+meetingId+'"][data-date="'+date+'"]');
+  const notes=field?field.value.trim():'';
+  const ok=await saveMeetingNoteValue(meetingId,date,notes);
+  if(ok)renderShell();
 }
 async function addVisit(e){e.preventDefault();const row={council_id:me.council_id,chapter:v('vChapter'),visit_date:v('vDate'),went_well:v('vGood'),needs_help:v('vHelp'),follow_up:v('vNext'),created_by:me.id};const r=await sb.from('chapter_visits').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
 async function requestOne(e){e.preventDefault();const row={council_id:me.council_id,counterpart_profile_id:me.id,council_sgan_profile_id:v('oneLeader'),requested_date:v('oneDate'),requested_start:v('oneStart'),requested_end:v('oneEnd')||null,notes:v('oneNotes')};const r=await sb.from('one_on_one_requests').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell();alert('1:1 request sent.')}
