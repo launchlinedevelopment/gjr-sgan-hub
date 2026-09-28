@@ -102,13 +102,13 @@ function dashboardHtml(){
   const openReq=state.requests.filter(function(r){return r.status==='requested'}).length;
   return '<section class="hero"><div class="hero-copy"><div class="eyebrow">GREATER JERSEY REGION · '+esc(council?council.name:'')+'</div><h1>Lead the week.<br><span>Stay connected.</span></h1><p>'+dashboardSubtitle()+'</p></div><div class="hero-ring" style="--pct:'+pct+'%"><div><strong>'+pct+'%</strong><span>weekly progress</span></div></div></section>'+
   '<section class="stats"><div class="stat"><span>Checklist</span><strong>'+done+'/'+templates.length+'</strong><small>completed</small></div><div class="stat"><span>Next meeting</span><strong>'+(next?fmtTime(next.meeting.start_time):'—')+'</strong><small>'+(next?esc(next.meeting.title):'nothing upcoming')+'</small></div><div class="stat"><span>Follow-ups</span><strong>'+needs+'</strong><small>counterparts due</small></div><div class="stat"><span>1:1 requests</span><strong>'+openReq+'</strong><small>open requests</small></div></section>'+
-  '<div class="grid-2"><section class="card"><div class="card-head"><div><div class="eyebrow">CHECKLIST</div><h2>'+ (me.role==='counterpart'?'My Actions':'Leadership Actions') +'</h2></div></div>'+checklistHtml(templates)+'</section><section class="card"><div class="card-head"><div><div class="eyebrow">UP NEXT</div><h2>Schedule</h2></div></div>'+upcomingHtml(6)+'</section></div>'+
+  '<div class="grid-2"><section class="card"><div class="card-head"><div><div class="eyebrow">MY TASKS</div><h2>Personal tasks</h2></div><button id="addTaskBtn" class="primary">+ Add task</button></div>'+checklistHtml(templates)+'</section><section class="card"><div class="card-head"><div><div class="eyebrow">UP NEXT</div><h2>Schedule</h2></div></div>'+upcomingHtml(6)+'</section></div>'+
   (me.role==='counterpart'?counterpartQuickHtml():'');
 }
 function dashboardSubtitle(){return me.role==='counterpart'?'Your council schedule, 1:1s, messages, and action items in one place.':'Counterparts, focus chapters, steering, meetings, and council follow-ups in one place.'}
 
-function visibleTemplates(){return state.templates.filter(function(t){return !t.council_id||t.council_id===me.council_id})}
-function periodKey(t){const d=new Date();if(t.cadence==='daily')return iso(d);const x=new Date(d);const off=(x.getDay()+6)%7;x.setDate(x.getDate()-off);return iso(x)}
+function visibleTemplates(){return state.templates.filter(function(t){return t.owner_profile_id===me.id})}
+function periodKey(t){const d=new Date();if(t.cadence==='once')return 'once';if(t.cadence==='daily')return iso(d);const x=new Date(d);const off=(x.getDay()+6)%7;x.setDate(x.getDate()-off);return iso(x)}
 function isDone(t){const p=periodKey(t);return state.completions.some(function(c){return c.template_id===t.id&&c.period_key===p})}
 function checklistHtml(ts){
   if(!ts.length)return '<div class="empty">No active checklist items.</div>';
@@ -123,7 +123,7 @@ function occurrence(m,date){
 }
 function nextOccurrences(days){
   const out=[],today=new Date();
-  for(let i=0;i<days;i++){const d=new Date(today.getFullYear(),today.getMonth(),today.getDate()+i,12);state.meetings.forEach(function(m){const visible=(m.visible_regionwide&&me.role!=='counterpart')||m.council_id===me.council_id||m.owner_profile_id===me.id;if(visible&&occurrence(m,d))out.push({meeting:m,date:d})})}
+  for(let i=0;i<days;i++){const d=new Date(today.getFullYear(),today.getMonth(),today.getDate()+i,12);state.meetings.forEach(function(m){if(m.owner_profile_id===me.id&&occurrence(m,d))out.push({meeting:m,date:d})})}
   return out.sort(function(a,b){return iso(a.date).localeCompare(iso(b.date))||String(a.meeting.start_time).localeCompare(String(b.meeting.start_time))});
 }
 function meetingContactName(m){if(m.contact_type==='gjr_staff')return 'GJR Staff';const c=state.counterparts.find(function(x){return x.id===m.counterpart_id});return c?c.name:(m.contact_name||'')}
@@ -167,7 +167,7 @@ function counterpartCard(c){
 }
 
 function visitsHtml(){
-  const list=state.visits.filter(function(x){return me.role==='admin'||x.council_id===me.council_id});
+  const list=state.visits.filter(function(x){return x.created_by===me.id});
   return '<section class="card"><div class="card-head"><div><div class="eyebrow">CHAPTER VISITS</div><h2>Visit Tracker</h2></div></div><form id="visitForm" class="form-grid"><label>Chapter<input id="vChapter" required></label><label>Date<input id="vDate" type="date" required></label><label class="wide">What went well?<input id="vGood"></label><label class="wide">What do they need help with?<input id="vHelp"></label><label class="wide">Follow-up / next step<input id="vNext"></label><button class="primary">Log visit</button></form></section><section class="card" style="margin-top:15px"><div class="visit-grid">'+(list.length?list.map(function(x){return '<article class="visit-card"><div class="eyebrow">'+niceDate(x.visit_date)+'</div><h3>'+esc(x.chapter)+'</h3><p><b>Went well:</b> '+esc(x.went_well||'—')+'</p><p><b>Needs help:</b> '+esc(x.needs_help||'—')+'</p><p><b>Next:</b> '+esc(x.follow_up||'—')+'</p></article>'}).join(''):'<div class="empty">No visits logged yet.</div>')+'</div></section>';
 }
 
@@ -217,6 +217,7 @@ function wireView(){
   const chat=document.getElementById('chatForm');if(chat)chat.onsubmit=sendMessage;
   const mf=document.getElementById('meetingForm');if(mf)mf.onsubmit=addMeeting;
   const vf=document.getElementById('visitForm');if(vf)vf.onsubmit=addVisit;
+  const at=document.getElementById('addTaskBtn');if(at)at.onclick=addPersonalTask;
   const of=document.getElementById('oneForm');if(of)of.onsubmit=requestOne;
   document.querySelectorAll('.reqAction').forEach(function(btn){btn.onclick=async function(){await sb.from('one_on_one_requests').update({status:btn.dataset.status}).eq('id',btn.dataset.id);await loadAll();renderShell()}});
   const cf=document.getElementById('councilForm');if(cf)cf.onsubmit=addCouncil;
@@ -227,6 +228,20 @@ function wireView(){
   document.querySelectorAll('.programDecision').forEach(function(btn){btn.onclick=async function(){const box=document.querySelector('.programFeedback[data-id="'+btn.dataset.id+'"]');const feedback=box?box.value.trim():'';if(btn.dataset.status==='needs_changes'&&!feedback){alert('Add a helpful note explaining how the program can be improved.');return;}const r=await sb.from('program_planning_forms').update({status:btn.dataset.status,council_feedback:feedback,reviewed_by:me.id,reviewed_at:new Date().toISOString()}).eq('id',btn.dataset.id);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}});
 }
 
+async function addPersonalTask(){
+  const title=prompt('Task name:');
+  if(!title||!title.trim())return;
+  const r=await sb.from('check_templates').insert({
+    council_id:me.council_id,
+    owner_profile_id:me.id,
+    title:title.trim(),
+    group_name:'My Tasks',
+    cadence:'once',
+    active:true
+  });
+  if(r.error){alert(r.error.message);return;}
+  await loadAll();renderShell();
+}
 async function createCounterpartAccount(id){
   const cp=state.counterparts.find(function(x){return x.id===id});if(!cp)return;
   const email=prompt('Email for '+cp.name+':');if(!email)return;
