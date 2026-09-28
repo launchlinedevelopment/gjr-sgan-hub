@@ -75,7 +75,7 @@ async function loadAll(){
 function renderShell(){
   const role=me.role;
   const nav=[
-    ['dashboard','Overview','⌂'],['schedule','Schedule','◷'],['programs','Programs','▤'],['messages','Messages','✦']
+    ['dashboard','Overview','⌂'],['schedule','Schedule','◷'],['notes','Notes','✎'],['programs','Programs','▤'],['messages','Messages','✦']
   ];
   if(role!=='counterpart'){nav.push(['people','People','◎']);nav.push(['visits','Visits','↗']);}
   if(role==='admin')nav.push(['admin','Admin','⚙']);
@@ -88,6 +88,7 @@ function renderShell(){
 function roleLabel(r){return r==='admin'?'Regional Admin':r==='council_sgan'?'Council S\'gan/S\'ganit':'Counterpart'}
 function viewHtml(view){
   if(view==='schedule')return scheduleHtml();
+  if(view==='notes')return notesHtml();
   if(view==='programs')return programsHtml();
   if(view==='messages')return messagesHtml();
   if(view==='people'&&me.role!=='counterpart')return peopleHtml();
@@ -177,6 +178,23 @@ function meetingNotesHtml(){
     '</article>';
   }).join('')+'</div></section>';
 }
+function notesHtml(){
+  const notes=(state.meetingNotes||[]).slice().sort(function(a,b){return String(b.occurrence_date).localeCompare(String(a.occurrence_date))});
+  const visible=notes.filter(function(n){
+    const m=state.meetings.find(function(x){return x.id===n.meeting_id});
+    return !!m&&(m.owner_profile_id===me.id||m.attendee_profile_id===me.id);
+  });
+  let html='<section class="hero"><div class="hero-copy"><div class="eyebrow">MEETING NOTES</div><h1>Your notes.<br><span>All in one place.</span></h1><p>Jump back into notes from past meetings without digging through your schedule.</p></div></section>';
+  if(!visible.length)return html+'<section class="card" style="margin-top:15px"><div class="empty">No meeting notes yet. Open a meeting from Schedule to add your first note.</div></section><div id="meetingModalHost"></div>';
+  html+='<section class="card notes-library" style="margin-top:15px"><div class="card-head"><div><div class="eyebrow">NOTES LIBRARY</div><h2>'+visible.length+' saved note'+(visible.length===1?'':'s')+'</h2></div></div><div class="notes-grid">'+visible.map(function(n){
+    const m=state.meetings.find(function(x){return x.id===n.meeting_id});if(!m)return '';
+    const contact=meetingContactName(m);
+    const preview=(n.notes||'').trim();
+    return '<button class="note-card openMeeting" data-meeting="'+m.id+'" data-date="'+n.occurrence_date+'"><div class="note-card-top"><div><span class="note-date">'+niceDate(n.occurrence_date)+'</span><strong>'+esc(m.title)+'</strong></div><span class="note-arrow">→</span></div><div class="note-meta">'+fmtTime(m.start_time)+(contact?' · with '+esc(contact):'')+'</div><p>'+esc(preview||'No notes added yet.')+'</p><span class="note-open">Open meeting details</span></button>';
+  }).join('')+'</div></section><div id="meetingModalHost"></div>';
+  return html;
+}
+
 function requestOneOnOneHtml(){
   const leaders=state.profiles.filter(function(p){return p.council_id===me.council_id&&(p.role==='admin'||p.role==='council_sgan')});
   return '<section class="card" style="margin-top:15px"><div class="eyebrow">1:1 WITH YOUR COUNCIL S\'GAN</div><h2>Request a time</h2><form id="oneForm" class="form-grid"><label class="wide">Council S\'gan/S\'ganit<select id="oneLeader">'+leaders.map(function(p){return '<option value="'+p.id+'">'+esc(p.display_name)+'</option>'}).join('')+'</select></label><label>Date<input id="oneDate" type="date" required></label><label>Start<input id="oneStart" type="time" required></label><label>End<input id="oneEnd" type="time"></label><label class="full">Notes<textarea id="oneNotes" rows="2"></textarea></label><button class="primary">Request 1:1</button></form></section>';
