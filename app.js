@@ -187,7 +187,7 @@ function programListHtml(forms,leader){
   if(!forms.length)return '<section class="card" style="margin-top:15px"><div class="empty">No Program Planning Forms yet.</div></section>';
   return '<section class="card" style="margin-top:15px"><div class="card-head"><div><div class="eyebrow">'+(leader?'REVIEW QUEUE':'MY SUBMISSIONS')+'</div><h2>'+forms.length+' program'+(forms.length===1?'':'s')+'</h2></div></div><div class="list">'+forms.map(function(p){
     const submitter=profile(p.submitted_by);
-    const ai=p.ai_status==='ready'?'<div class="status-line"><b>AI first look:</b> '+esc(p.ai_summary||'')+(p.ai_strengths?'<br><b>Strengths:</b> '+esc(p.ai_strengths):'')+(p.ai_questions?'<br><b>Questions to consider:</b> '+esc(p.ai_questions):'')+'</div>':'<div class="status-line"><b>AI first look:</b> '+(p.ai_status==='pending'?'Queued for analysis.':p.ai_status==='unavailable'?'PDF uploaded; AI analysis is not connected yet.':'Analysis could not be completed.')+'</div>';
+    const ai='';
     const review=leader?'<div class="program-review"><textarea class="programFeedback" data-id="'+p.id+'" rows="3" placeholder="If it needs work, explain how we can fix it...">'+esc(p.council_feedback||'')+'</textarea><div class="actions"><button class="primary programDecision" data-id="'+p.id+'" data-status="accepted">Accept program</button><button class="ghost programDecision" data-id="'+p.id+'" data-status="needs_changes">How we can fix this</button></div></div>':'';
     return '<article class="item" style="display:block"><div class="card-head"><div><strong>'+esc(p.program_name)+'</strong><span>'+esc(p.chapter_name)+(p.program_date?' · '+niceDate(p.program_date):'')+(submitter?' · '+esc(submitter.display_name):'')+'</span></div><span class="pill">'+esc(p.status==='needs_changes'?'How we can fix this':p.status)+'</span></div><div class="actions" style="margin:10px 0"><button class="tiny-btn openProgramPdf" data-path="'+esc(p.file_path)+'">Open PDF</button></div>'+ai+(p.council_feedback?'<div class="status-line"><b>Council feedback:</b> '+esc(p.council_feedback)+'</div>':'')+review+'</article>';
   }).join('')+'</div></section>';
@@ -259,11 +259,9 @@ async function submitProgram(e){
   const path=me.council_id+'/'+me.id+'/'+Date.now()+'-'+safe;
   const up=await sb.storage.from('program-planning-forms').upload(path,file,{contentType:'application/pdf'});
   if(up.error){alert(up.error.message);return;}
-  const row={council_id:me.council_id,submitted_by:me.id,chapter_name:v('pChapter'),program_name:v('pName'),program_date:v('pDate')||null,file_path:path,file_name:file.name,ai_status:'pending'};
+  const row={council_id:me.council_id,submitted_by:me.id,chapter_name:v('pChapter'),program_name:v('pName'),program_date:v('pDate')||null,file_path:path,file_name:file.name,ai_status:'unavailable'};
   const r=await sb.from('program_planning_forms').insert(row).select().single();
   if(r.error){alert(r.error.message);return;}
-  const ai=await sb.functions.invoke('analyze-program-form',{body:{submission_id:r.data.id}});
-  if(ai.error)await sb.from('program_planning_forms').update({ai_status:'unavailable'}).eq('id',r.data.id);
   await loadAll();renderShell();
 }
 async function addMeeting(e){e.preventDefault();const contact=v('mCounterpart');const row={council_id:me.council_id,title:v('mTitle'),mode:v('mMode'),start_date:v('mDate'),start_time:v('mStart'),end_time:v('mEnd')||null,recurrence:v('mRepeat'),url:v('mUrl'),location:v('mLocation'),owner_profile_id:me.id,counterpart_id:contact&&contact!=='__GJR_STAFF__'?contact:null,contact_type:contact==='__GJR_STAFF__'?'gjr_staff':contact?'counterpart':'none',contact_name:contact==='__GJR_STAFF__'?'GJR Staff':''};const r=await sb.from('meetings').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
