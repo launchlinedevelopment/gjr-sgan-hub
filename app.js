@@ -29,24 +29,12 @@ function renderSetup(){
 }
 
 function renderLogin(message){
-  app.innerHTML='<div class="login-shell"><section class="login-card"><div class="login-brand"><div class="login-logo">GJR</div><div><strong>GJR S\'gan Hub</strong><span class="muted">Greater Jersey Region leadership</span></div></div><div class="eyebrow">SECURE ACCESS</div><h1>Welcome back.</h1><p>Sign in to your S\'gan workspace, schedule, messages, and chapter tools.</p><form id="loginForm" class="login-form"><label>Email<input id="loginEmail" type="email" required></label><label>Password<input id="loginPassword" type="password" required></label><button class="primary" type="submit">Sign in</button><button class="ghost" type="button" id="firstAdminBtn">Create first admin account</button><div id="loginStatus" class="status-line">'+esc(message||'')+'</div></form></section></div>';
+  app.innerHTML='<div class="login-shell"><section class="login-card"><div class="login-brand"><div class="login-logo">GJR</div><div><strong>GJR S\'gan Hub</strong><span class="muted">Greater Jersey Region leadership</span></div></div><div class="eyebrow">SECURE ACCESS</div><h1>Welcome back.</h1><p>Sign in to your S\'gan workspace, schedule, messages, and chapter tools.</p><form id="loginForm" class="login-form"><label>Email<input id="loginEmail" type="email" required></label><label>Password<input id="loginPassword" type="password" required></label><button class="primary" type="submit">Sign in</button><div id="loginStatus" class="status-line">'+esc(message||'')+'</div></form></section></div>';
   document.getElementById('loginForm').onsubmit=async function(e){
     e.preventDefault();setStatus('Signing in...');
     const r=await sb.auth.signInWithPassword({email:v('loginEmail'),password:v('loginPassword')});
     if(r.error){setStatus(r.error.message);return;}
     session=r.data.session;await loadMe();await loadAll();subscribeMessages();renderShell();
-  };
-  document.getElementById('firstAdminBtn').onclick=async function(){
-    const email=v('loginEmail'),password=v('loginPassword');
-    if(!email||!password){setStatus('Enter the email and password you want for the admin account first.');return;}
-    setStatus('Creating admin account...');
-    const r=await sb.auth.signUp({email:email,password:password});
-    if(r.error){setStatus(r.error.message);return;}
-    if(!r.data.session){setStatus('Account created. Check your email if Supabase email confirmation is enabled, then sign in.');return;}
-    session=r.data.session;
-    const b=await sb.rpc('bootstrap_admin_profile');
-    if(b.error){setStatus(b.error.message);return;}
-    await loadMe();await loadAll();renderShell();
   };
 }
 function setStatus(t){const x=document.getElementById('loginStatus');if(x)x.textContent=t}
