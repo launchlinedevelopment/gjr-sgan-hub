@@ -62,18 +62,19 @@ async function loadAll(){
     sb.from('meetings').select('*').order('start_date').order('start_time'),
     sb.from('chapter_visits').select('*').order('visit_date',{ascending:false}),
     sb.from('one_on_one_requests').select('*').order('requested_date').order('requested_start'),
-    sb.from('messages').select('*').or('sender_id.eq.'+me.id+',recipient_id.eq.'+me.id).order('created_at')
+    sb.from('messages').select('*').or('sender_id.eq.'+me.id+',recipient_id.eq.'+me.id).order('created_at'),
+    sb.from('program_planning_forms').select('*').order('created_at',{ascending:false})
   ];
   const out=await Promise.all(queries);
   state.profiles=out[0].data||[];state.councils=out[1].data||[];state.counterparts=out[2].data||[];
   state.templates=out[3].data||[];state.completions=out[4].data||[];state.meetings=out[5].data||[];
-  state.visits=out[6].data||[];state.requests=out[7].data||[];state.messages=out[8].data||[];
+  state.visits=out[6].data||[];state.requests=out[7].data||[];state.messages=out[8].data||[];state.programs=out[9].data||[];
 }
 
 function renderShell(){
   const role=me.role;
   const nav=[
-    ['dashboard','Overview','⌂'],['schedule','Schedule','◷'],['messages','Messages','✦']
+    ['dashboard','Overview','⌂'],['schedule','Schedule','◷'],['programs','Programs','▤'],['messages','Messages','✦']
   ];
   if(role!=='counterpart'){nav.push(['people','People','◎']);nav.push(['visits','Visits','↗']);}
   if(role==='admin')nav.push(['admin','Admin','⚙']);
@@ -86,6 +87,7 @@ function renderShell(){
 function roleLabel(r){return r==='admin'?'Regional Admin':r==='council_sgan'?'Council S\'gan/S\'ganit':'Counterpart'}
 function viewHtml(view){
   if(view==='schedule')return scheduleHtml();
+  if(view==='programs')return programsHtml();
   if(view==='messages')return messagesHtml();
   if(view==='people'&&me.role!=='counterpart')return peopleHtml();
   if(view==='visits'&&me.role!=='counterpart')return visitsHtml();
@@ -124,7 +126,7 @@ function nextOccurrences(days){
   for(let i=0;i<days;i++){const d=new Date(today.getFullYear(),today.getMonth(),today.getDate()+i,12);state.meetings.forEach(function(m){const visible=(m.visible_regionwide&&me.role!=='counterpart')||m.council_id===me.council_id||m.owner_profile_id===me.id;if(visible&&occurrence(m,d))out.push({meeting:m,date:d})})}
   return out.sort(function(a,b){return iso(a.date).localeCompare(iso(b.date))||String(a.meeting.start_time).localeCompare(String(b.meeting.start_time))});
 }
-function meetingContactName(m){const c=state.counterparts.find(function(x){return x.id===m.counterpart_id});return c?c.name:''}
+function meetingContactName(m){if(m.contact_type==='gjr_staff')return 'GJR Staff';const c=state.counterparts.find(function(x){return x.id===m.counterpart_id});return c?c.name:(m.contact_name||'')}
 function upcomingHtml(n){const list=nextOccurrences(35).slice(0,n);if(!list.length)return '<div class="empty">Nothing upcoming.</div>';return '<div class="list">'+list.map(function(x){const m=x.meeting,contact=meetingContactName(m);return '<div class="item"><div><strong>'+esc(m.title)+'</strong><span>'+niceDate(iso(x.date))+' · '+fmtTime(m.start_time)+(m.end_time?'–'+fmtTime(m.end_time):'')+' · '+esc(m.mode)+(contact?' · with '+esc(contact):'')+(m.recurrence!=='none'?' · '+(m.recurrence==='weekly'?'Weekly':'Every other week'):'')+'</span></div><div class="actions">'+(m.url?'<a class="join" target="_blank" rel="noopener" href="'+esc(m.url)+'">Join ↗</a>':'')+'</div></div>'}).join('')+'</div>'}
 
 function scheduleHtml(){
@@ -132,7 +134,7 @@ function scheduleHtml(){
   const contacts=state.counterparts.filter(function(c){return c.council_id===me.council_id});
   let html='<section class="card"><div class="card-head"><div><div class="eyebrow">SCHEDULE</div><h2>Your BBYO week</h2></div></div><div class="schedule-board">'+week.map(function(d){const list=occ.filter(function(x){return iso(x.date)===iso(d)});return '<div class="day-col"><h4>'+dayName(d)+' · '+(d.getMonth()+1)+'/'+d.getDate()+'</h4>'+ (list.length?list.map(function(x){const contact=meetingContactName(x.meeting);return '<div class="meeting-mini"><strong>'+esc(x.meeting.title)+'</strong><span>'+fmtTime(x.meeting.start_time)+(x.meeting.end_time?'–'+fmtTime(x.meeting.end_time):'')+(contact?' · with '+esc(contact):'')+'</span></div>'}).join(''):'<span class="muted" style="font-size:9px">Open</span>')+'</div>'}).join('')+'</div></section>';
   if(me.role!=='counterpart'){
-    html+='<section class="card" style="margin-top:15px"><div class="eyebrow">ADD MEETING</div><h2>Build your schedule</h2><form id="meetingForm" class="form-grid"><label class="wide">Meeting name<input id="mTitle" required></label><label class="wide">Who are you meeting with?<select id="mCounterpart"><option value="">No specific contact</option>'+contacts.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+' — '+esc(c.chapter)+'</option>'}).join('')+'</select></label><label>Type<select id="mMode"><option>Online</option><option>In-Person</option></select></label><label>Repeats<select id="mRepeat"><option value="none">One time</option><option value="weekly">Weekly</option><option value="biweekly">Every other week</option></select></label><label>Date<input id="mDate" type="date" required></label><label>Starts<input id="mStart" type="time" required></label><label>Ends<input id="mEnd" type="time"></label><label>Location<input id="mLocation"></label><label class="wide">Meeting link<input id="mUrl" type="url"></label><button class="primary">Add meeting</button></form></section>';
+    html+='<section class="card" style="margin-top:15px"><div class="eyebrow">ADD MEETING</div><h2>Build your schedule</h2><form id="meetingForm" class="form-grid"><label class="wide">Meeting name<input id="mTitle" required></label><label class="wide">Who are you meeting with?<select id="mCounterpart"><option value="">No specific contact</option><option value="__GJR_STAFF__">GJR Staff</option>'+contacts.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+' — '+esc(c.chapter)+'</option>'}).join('')+'</select></label><label>Type<select id="mMode"><option>Online</option><option>In-Person</option></select></label><label>Repeats<select id="mRepeat"><option value="none">One time</option><option value="weekly">Weekly</option><option value="biweekly">Every other week</option></select></label><label>Date<input id="mDate" type="date" required></label><label>Starts<input id="mStart" type="time" required></label><label>Ends<input id="mEnd" type="time"></label><label>Location<input id="mLocation"></label><label class="wide">Meeting link<input id="mUrl" type="url"></label><button class="primary">Add meeting</button></form></section>';
     html+=requestsLeaderHtml();
   }else{
     html+=requestOneOnOneHtml();
@@ -173,6 +175,24 @@ function adminHtml(){
   return '<section class="hero"><div class="hero-copy"><div class="eyebrow">REGIONAL ADMIN</div><h1>Build the network.</h1><p>Create councils, add Council S\'ganim/S\'ganiot, and manage account access.</p></div></section><div class="grid-2"><section class="card"><div class="eyebrow">NEW COUNCIL</div><h2>Add a council</h2><form id="councilForm" class="form-grid"><label>Code<input id="cCode" placeholder="e.g. NNJAZA" required></label><label class="wide">Display name<input id="cName" required></label><button class="primary">Create council</button></form></section><section class="card"><div class="eyebrow">COUNCIL S\'GAN/S\'GANIT</div><h2>Create leader account</h2><form id="leaderForm" class="form-grid"><label class="wide">Display name<input id="lName" required></label><label>Council<select id="lCouncil">'+state.councils.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+'</option>'}).join('')+'</select></label><label>Email<input id="lEmail" type="email" required></label><label>Password<input id="lPass" type="text" required></label><button class="primary">Create Council S\'gan/S\'ganit</button></form></section></div><section class="card" style="margin-top:15px"><div class="eyebrow">COUNCILS</div><h2>Regional structure</h2><div class="council-grid">'+state.councils.map(function(c){const leads=state.profiles.filter(function(p){return p.council_id===c.id&&(p.role==='admin'||p.role==='council_sgan')});return '<article class="council-card"><strong>'+esc(c.name)+'</strong><span class="muted" style="display:block;font-size:10px;margin:3px 0 9px">'+esc(c.display_name)+'</span><div class="list">'+(leads.length?leads.map(function(p){return '<div class="item"><div><strong>'+esc(p.display_name)+'</strong><span>'+roleLabel(p.role)+'</span></div></div>'}).join(''):'<div class="empty">No S\'gan assigned yet.</div>')+'</div></article>'}).join('')+'</div></section>';
 }
 
+function programsHtml(){
+  const forms=(state.programs||[]).filter(function(x){return me.role==='admin'||x.council_id===me.council_id||x.submitted_by===me.id});
+  if(me.role==='counterpart'){
+    return '<section class="hero"><div class="hero-copy"><div class="eyebrow">PROGRAM PLANNING</div><h1>Submit your program.</h1><p>Upload your Program Planning Form as a PDF for your Council S\\'gan/S\\'ganit to review.</p></div></section>'+
+    '<section class="card" style="margin-top:15px"><div class="eyebrow">NEW SUBMISSION</div><h2>Program Planning Form</h2><form id="programForm" class="form-grid"><label class="wide">Program name<input id="pName" required></label><label>Chapter<input id="pChapter" required></label><label>Program date<input id="pDate" type="date"></label><label class="full">PDF<input id="pFile" type="file" accept="application/pdf,.pdf" required></label><button class="primary">Upload for review</button></form></section>'+programListHtml(forms,false);
+  }
+  return '<section class="hero"><div class="hero-copy"><div class="eyebrow">PROGRAM REVIEW DESK</div><h1>Help programs get stronger.</h1><p>Review chapter submissions, approve what is ready, and give constructive fixes when something needs work.</p></div></section>'+programListHtml(forms,true);
+}
+function programListHtml(forms,leader){
+  if(!forms.length)return '<section class="card" style="margin-top:15px"><div class="empty">No Program Planning Forms yet.</div></section>';
+  return '<section class="card" style="margin-top:15px"><div class="card-head"><div><div class="eyebrow">'+(leader?'REVIEW QUEUE':'MY SUBMISSIONS')+'</div><h2>'+forms.length+' program'+(forms.length===1?'':'s')+'</h2></div></div><div class="list">'+forms.map(function(p){
+    const submitter=profile(p.submitted_by);
+    const ai=p.ai_status==='ready'?'<div class="status-line"><b>AI first look:</b> '+esc(p.ai_summary||'')+(p.ai_strengths?'<br><b>Strengths:</b> '+esc(p.ai_strengths):'')+(p.ai_questions?'<br><b>Questions to consider:</b> '+esc(p.ai_questions):'')+'</div>':'<div class="status-line"><b>AI first look:</b> '+(p.ai_status==='pending'?'Queued for analysis.':p.ai_status==='unavailable'?'PDF uploaded; AI analysis is not connected yet.':'Analysis could not be completed.')+'</div>';
+    const review=leader?'<div class="program-review"><textarea class="programFeedback" data-id="'+p.id+'" rows="3" placeholder="If it needs work, explain how we can fix it...">'+esc(p.council_feedback||'')+'</textarea><div class="actions"><button class="primary programDecision" data-id="'+p.id+'" data-status="accepted">Accept program</button><button class="ghost programDecision" data-id="'+p.id+'" data-status="needs_changes">How we can fix this</button></div></div>':'';
+    return '<article class="item" style="display:block"><div class="card-head"><div><strong>'+esc(p.program_name)+'</strong><span>'+esc(p.chapter_name)+(p.program_date?' · '+niceDate(p.program_date):'')+(submitter?' · '+esc(submitter.display_name):'')+'</span></div><span class="pill">'+esc(p.status==='needs_changes'?'How we can fix this':p.status)+'</span></div><div class="actions" style="margin:10px 0"><button class="tiny-btn openProgramPdf" data-path="'+esc(p.file_path)+'">Open PDF</button></div>'+ai+(p.council_feedback?'<div class="status-line"><b>Council feedback:</b> '+esc(p.council_feedback)+'</div>':'')+review+'</article>';
+  }).join('')+'</div></section>';
+}
+
 function messagesHtml(){
   const people=state.profiles.filter(function(p){
     if(p.id===me.id||p.council_id!==me.council_id)return false;
@@ -202,6 +222,9 @@ function wireView(){
   const cf=document.getElementById('councilForm');if(cf)cf.onsubmit=addCouncil;
   const lf=document.getElementById('leaderForm');if(lf)lf.onsubmit=createLeader;
   const cpf=document.getElementById('counterpartForm');if(cpf)cpf.onsubmit=addCounterpart;
+  const pf=document.getElementById('programForm');if(pf)pf.onsubmit=submitProgram;
+  document.querySelectorAll('.openProgramPdf').forEach(function(btn){btn.onclick=async function(){const r=await sb.storage.from('program-planning-forms').createSignedUrl(btn.dataset.path,300);if(r.error){alert(r.error.message);return;}window.open(r.data.signedUrl,'_blank')}});
+  document.querySelectorAll('.programDecision').forEach(function(btn){btn.onclick=async function(){const box=document.querySelector('.programFeedback[data-id="'+btn.dataset.id+'"]');const feedback=box?box.value.trim():'';if(btn.dataset.status==='needs_changes'&&!feedback){alert('Add a helpful note explaining how the program can be improved.');return;}const r=await sb.from('program_planning_forms').update({status:btn.dataset.status,council_feedback:feedback,reviewed_by:me.id,reviewed_at:new Date().toISOString()}).eq('id',btn.dataset.id);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}});
 }
 
 async function createCounterpartAccount(id){
@@ -226,7 +249,24 @@ async function addCounterpart(e){
   if(r.error){alert(r.error.message);return;}
   await loadAll();renderShell();
 }
-async function addMeeting(e){e.preventDefault();const row={council_id:me.council_id,title:v('mTitle'),mode:v('mMode'),start_date:v('mDate'),start_time:v('mStart'),end_time:v('mEnd')||null,recurrence:v('mRepeat'),url:v('mUrl'),location:v('mLocation'),owner_profile_id:me.id,counterpart_id:v('mCounterpart')||null};const r=await sb.from('meetings').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
+async function submitProgram(e){
+  e.preventDefault();
+  const input=document.getElementById('pFile'),file=input&&input.files&&input.files[0];
+  if(!file){alert('Choose a PDF first.');return;}
+  if(file.type!=='application/pdf'&&!file.name.toLowerCase().endsWith('.pdf')){alert('Program Planning Forms must be PDFs.');return;}
+  if(file.size>10*1024*1024){alert('PDF must be 10 MB or smaller.');return;}
+  const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  const path=me.council_id+'/'+me.id+'/'+Date.now()+'-'+safe;
+  const up=await sb.storage.from('program-planning-forms').upload(path,file,{contentType:'application/pdf'});
+  if(up.error){alert(up.error.message);return;}
+  const row={council_id:me.council_id,submitted_by:me.id,chapter_name:v('pChapter'),program_name:v('pName'),program_date:v('pDate')||null,file_path:path,file_name:file.name,ai_status:'pending'};
+  const r=await sb.from('program_planning_forms').insert(row).select().single();
+  if(r.error){alert(r.error.message);return;}
+  const ai=await sb.functions.invoke('analyze-program-form',{body:{submission_id:r.data.id}});
+  if(ai.error)await sb.from('program_planning_forms').update({ai_status:'unavailable'}).eq('id',r.data.id);
+  await loadAll();renderShell();
+}
+async function addMeeting(e){e.preventDefault();const contact=v('mCounterpart');const row={council_id:me.council_id,title:v('mTitle'),mode:v('mMode'),start_date:v('mDate'),start_time:v('mStart'),end_time:v('mEnd')||null,recurrence:v('mRepeat'),url:v('mUrl'),location:v('mLocation'),owner_profile_id:me.id,counterpart_id:contact&&contact!=='__GJR_STAFF__'?contact:null,contact_type:contact==='__GJR_STAFF__'?'gjr_staff':contact?'counterpart':'none',contact_name:contact==='__GJR_STAFF__'?'GJR Staff':''};const r=await sb.from('meetings').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
 async function addVisit(e){e.preventDefault();const row={council_id:me.council_id,chapter:v('vChapter'),visit_date:v('vDate'),went_well:v('vGood'),needs_help:v('vHelp'),follow_up:v('vNext'),created_by:me.id};const r=await sb.from('chapter_visits').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
 async function requestOne(e){e.preventDefault();const row={council_id:me.council_id,counterpart_profile_id:me.id,council_sgan_profile_id:v('oneLeader'),requested_date:v('oneDate'),requested_start:v('oneStart'),requested_end:v('oneEnd')||null,notes:v('oneNotes')};const r=await sb.from('one_on_one_requests').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell();alert('1:1 request sent.')}
 async function sendMessage(e){e.preventDefault();const body=v('chatText');if(!body||!activeThread)return;const r=await sb.from('messages').insert({council_id:me.council_id,sender_id:me.id,recipient_id:activeThread,body:body});if(r.error){alert(r.error.message);return;}document.getElementById('chatText').value='';await loadAll();renderShell()}
