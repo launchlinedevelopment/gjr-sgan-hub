@@ -178,7 +178,7 @@ function adminHtml(){
 function programsHtml(){
   const forms=(state.programs||[]).filter(function(x){return me.role==='admin'||x.council_id===me.council_id||x.submitted_by===me.id});
   if(me.role==='counterpart'){
-    return '<section class="hero"><div class="hero-copy"><div class="eyebrow">PROGRAM PLANNING</div><h1>Submit your program.</h1><p>Upload your Program Planning Form as a PDF for your Council S\\'gan/S\\'ganit to review.</p></div></section>'+
+    return '<section class="hero"><div class="hero-copy"><div class="eyebrow">PROGRAM PLANNING</div><h1>Submit your program.</h1><p>Upload your Program Planning Form as a PDF for your Council S\'gan/S\'ganit to review.</p></div></section>'+
     '<section class="card" style="margin-top:15px"><div class="eyebrow">NEW SUBMISSION</div><h2>Program Planning Form</h2><form id="programForm" class="form-grid"><label class="wide">Program name<input id="pName" required></label><label>Chapter<input id="pChapter" required></label><label>Program date<input id="pDate" type="date"></label><label class="full">PDF<input id="pFile" type="file" accept="application/pdf,.pdf" required></label><button class="primary">Upload for review</button></form></section>'+programListHtml(forms,false);
   }
   return '<section class="hero"><div class="hero-copy"><div class="eyebrow">PROGRAM REVIEW DESK</div><h1>Help programs get stronger.</h1><p>Review chapter submissions, approve what is ready, and give constructive fixes when something needs work.</p></div></section>'+programListHtml(forms,true);
