@@ -62,6 +62,8 @@ create table if not exists meetings (
   location text default '',
   owner_profile_id uuid references profiles(id) on delete set null,
   counterpart_id uuid references counterparts(id) on delete set null,
+  contact_type text not null default 'none' check (contact_type in ('none','counterpart','gjr_staff')),
+  contact_name text default '',
   visible_regionwide boolean not null default false,
   created_at timestamptz not null default now()
 );
@@ -284,3 +286,32 @@ where c.name='CCAZA'
 and not exists(select 1 from meetings m where m.council_id=c.id and m.title=v.title);
 
 alter publication supabase_realtime add table messages;
+
+
+-- Program Planning Form workflow
+create table if not exists program_planning_forms (
+  id uuid primary key default gen_random_uuid(),
+  council_id uuid not null references councils(id) on delete cascade,
+  submitted_by uuid not null references profiles(id) on delete cascade,
+  chapter_name text not null,
+  program_name text not null,
+  program_date date,
+  file_path text not null,
+  file_name text not null,
+  status text not null default 'submitted' check (status in ('submitted','accepted','needs_changes')),
+  council_feedback text default '',
+  ai_status text not null default 'pending' check (ai_status in ('pending','ready','unavailable','error')),
+  ai_summary text default '',
+  ai_strengths text default '',
+  ai_questions text default '',
+  reviewed_by uuid references profiles(id) on delete set null,
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+alter table program_planning_forms enable row level security;
+create policy "program forms read" on program_planning_forms for select to authenticated using (submitted_by=auth.uid() or public.current_profile_role()='admin' or (public.current_profile_role()='council_sgan' and council_id=public.current_council_id()));
+create policy "chapter sgan submit forms" on program_planning_forms for insert to authenticated with check (submitted_by=auth.uid() and public.current_profile_role()='counterpart' and council_id=public.current_council_id());
+create policy "leaders review forms" on program_planning_forms for update to authenticated using (public.current_profile_role()='admin' or (public.current_profile_role()='council_sgan' and council_id=public.current_council_id()));
+insert into storage.buckets (id,name,public,file_size_limit,allowed_mime_types) values ('program-planning-forms','program-planning-forms',false,10485760,array['application/pdf']) on conflict (id) do nothing;
+create policy "program pdf upload" on storage.objects for insert to authenticated with check (bucket_id='program-planning-forms' and public.current_profile_role()='counterpart' and (storage.foldername(name))[1]=public.current_council_id()::text and (storage.foldername(name))[2]=auth.uid()::text);
+create policy "program pdf read" on storage.objects for select to authenticated using (bucket_id='program-planning-forms' and (owner_id=auth.uid()::text or public.current_profile_role()='admin' or (public.current_profile_role()='council_sgan' and (storage.foldername(name))[1]=public.current_council_id()::text)));
