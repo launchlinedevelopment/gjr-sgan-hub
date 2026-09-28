@@ -32,9 +32,10 @@ create table if not exists counterparts (
 create table if not exists check_templates (
   id uuid primary key default gen_random_uuid(),
   council_id uuid references councils(id) on delete cascade,
+  owner_profile_id uuid not null references profiles(id) on delete cascade,
   title text not null,
   group_name text not null default 'General',
-  cadence text not null check (cadence in ('weekly','daily')),
+  cadence text not null check (cadence in ('once','weekly','daily')),
   until_date date,
   active boolean not null default true,
   created_at timestamptz not null default now()
@@ -60,7 +61,7 @@ create table if not exists meetings (
   recurrence text not null default 'none' check (recurrence in ('none','weekly','biweekly')),
   url text default '',
   location text default '',
-  owner_profile_id uuid references profiles(id) on delete set null,
+  owner_profile_id uuid not null references profiles(id) on delete cascade,
   counterpart_id uuid references counterparts(id) on delete set null,
   contact_type text not null default 'none' check (contact_type in ('none','counterpart','gjr_staff')),
   contact_name text default '',
@@ -186,39 +187,37 @@ using (
   or (public.current_profile_role()='council_sgan' and council_id=public.current_council_id())
 );
 
-create policy "read check templates" on check_templates for select to authenticated
-using (council_id is null or public.current_profile_role()='admin' or council_id=public.current_council_id());
-create policy "leaders manage check templates" on check_templates for all to authenticated
-using (public.current_profile_role()='admin' or (public.current_profile_role()='council_sgan' and council_id=public.current_council_id()))
-with check (public.current_profile_role()='admin' or (public.current_profile_role()='council_sgan' and council_id=public.current_council_id()));
+create policy "read own check templates" on check_templates for select to authenticated
+using (owner_profile_id=auth.uid());
+create policy "insert own check templates" on check_templates for insert to authenticated
+with check (owner_profile_id=auth.uid());
+create policy "update own check templates" on check_templates for update to authenticated
+using (owner_profile_id=auth.uid()) with check (owner_profile_id=auth.uid());
+create policy "delete own check templates" on check_templates for delete to authenticated
+using (owner_profile_id=auth.uid());
 
-create policy "own check completions" on check_completions for select to authenticated
-using (profile_id=auth.uid() or public.current_profile_role() in ('admin','council_sgan'));
+create policy "read own check completions" on check_completions for select to authenticated
+using (profile_id=auth.uid());
 create policy "own insert check completions" on check_completions for insert to authenticated with check (profile_id=auth.uid());
 create policy "own delete check completions" on check_completions for delete to authenticated using (profile_id=auth.uid());
 
-create policy "read meetings" on meetings for select to authenticated
-using (
-  (visible_regionwide and public.current_profile_role() in ('admin','council_sgan'))
-  or public.current_profile_role()='admin'
-  or council_id=public.current_council_id()
-  or owner_profile_id=auth.uid()
-);
-create policy "leaders manage meetings" on meetings for all to authenticated
-using (
-  public.current_profile_role()='admin'
-  or (public.current_profile_role()='council_sgan' and (council_id=public.current_council_id() or owner_profile_id=auth.uid()))
-)
-with check (
-  public.current_profile_role()='admin'
-  or (public.current_profile_role()='council_sgan' and council_id=public.current_council_id())
-);
+create policy "read own meetings" on meetings for select to authenticated
+using (owner_profile_id=auth.uid());
+create policy "insert own meetings" on meetings for insert to authenticated
+with check (owner_profile_id=auth.uid());
+create policy "update own meetings" on meetings for update to authenticated
+using (owner_profile_id=auth.uid()) with check (owner_profile_id=auth.uid());
+create policy "delete own meetings" on meetings for delete to authenticated
+using (owner_profile_id=auth.uid());
 
-create policy "read chapter visits" on chapter_visits for select to authenticated
-using (public.current_profile_role()='admin' or council_id=public.current_council_id());
-create policy "leaders manage chapter visits" on chapter_visits for all to authenticated
-using (public.current_profile_role()='admin' or (public.current_profile_role()='council_sgan' and council_id=public.current_council_id()))
-with check (public.current_profile_role()='admin' or (public.current_profile_role()='council_sgan' and council_id=public.current_council_id()));
+create policy "read own chapter visits" on chapter_visits for select to authenticated
+using (created_by=auth.uid());
+create policy "insert own chapter visits" on chapter_visits for insert to authenticated
+with check (created_by=auth.uid());
+create policy "update own chapter visits" on chapter_visits for update to authenticated
+using (created_by=auth.uid()) with check (created_by=auth.uid());
+create policy "delete own chapter visits" on chapter_visits for delete to authenticated
+using (created_by=auth.uid());
 
 create policy "message participants read" on messages for select to authenticated
 using (sender_id=auth.uid() or recipient_id=auth.uid());
@@ -251,39 +250,7 @@ cross join (values
 where c.name='CCAZA'
 and not exists(select 1 from counterparts x where x.council_id=c.id and x.name=v.name);
 
--- Seed recurring leadership checks with the original CCAZA S'gan Hub details.
-insert into check_templates(council_id,title,group_name,cadence,until_date)
-select c.id,v.title,v.group_name,v.cadence,v.until_date
-from councils c
-cross join (values
- ('Josh Matthews — East Brunswick AZA','Counterparts','weekly',null::date),
- ('Charlie Mason — Marlboro AZA (Home Chapter)','Counterparts','weekly',null::date),
- ('Ryan Feldman — T''sahal BBYO','Counterparts','weekly',null::date),
- ('Jordan Feldman — Chavi BBYO (Focus Chapter)','Counterparts','weekly',null::date),
- ('Chavi BBYO — POC Madelyn Paradise · +1 (908) 873-8370','Focus Chapters','weekly',null::date),
- ('Marlboro AZA — POC Seth Borenstein · +1 (908) 670-5051','Focus Chapters','weekly',null::date),
- ('Check in on Yacht Party planning + sign-ups','Planning','weekly','2026-10-17'::date),
- ('Check in on FallCon Steering + signups','Daily Priority','daily','2026-11-20'::date)
-) as v(title,group_name,cadence,until_date)
-where c.name='CCAZA'
-and not exists(select 1 from check_templates t where t.council_id=c.id and t.title=v.title);
-
--- Regionwide S'ganim call stays on every council leader's schedule.
-insert into meetings(council_id,title,mode,start_date,start_time,end_time,recurrence,url,visible_regionwide)
-select null,'S''ganim Call w/ Max Nachman','Online','2026-09-29','17:00','18:00','weekly','https://bbyo-org.zoom.us/j/81014315071',true
-where not exists(select 1 from meetings where title='S''ganim Call w/ Max Nachman' and visible_regionwide=true);
-
--- CCAZA seed meetings.
-insert into meetings(council_id,title,mode,start_date,start_time,end_time,recurrence,url,visible_regionwide)
-select c.id,v.title,'Online',v.start_date,v.start_time,v.end_time,v.recurrence,v.url,false
-from councils c
-cross join (values
- ('1:1 w/ Max Nachman','2026-09-28'::date,'17:00'::time,null::time,'biweekly','https://bbyo-org.zoom.us/j/81844914425'),
- ('Thursday BBYO Meeting','2026-10-01'::date,'18:30'::time,'19:30'::time,'weekly','https://bbyo-org.zoom.us/j/89346459243'),
- ('FallCon Steering Meeting #1','2026-09-28'::date,'18:00'::time,'19:30'::time,'none','https://bbyo-org.zoom.us/j/88681936317')
-) as v(title,start_date,start_time,end_time,recurrence,url)
-where c.name='CCAZA'
-and not exists(select 1 from meetings m where m.council_id=c.id and m.title=v.title);
+-- Personal tasks and meetings are intentionally not seeded. New accounts start blank.
 
 alter publication supabase_realtime add table messages;
 
