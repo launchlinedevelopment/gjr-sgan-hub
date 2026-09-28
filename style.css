@@ -43,3 +43,13 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.glow{position:f
 .meeting-notes-panel textarea{width:100%;padding:12px;border-radius:13px;background:#091426;border:1px solid var(--line);color:white;resize:vertical;margin-bottom:9px}
 .meeting-note-readonly{padding:14px;border-radius:13px;background:rgba(255,255,255,.035);border:1px solid var(--line);font-size:12px;line-height:1.55;color:#dce5f8;white-space:pre-wrap}
 @media(max-width:640px){.meeting-detail-grid{grid-template-columns:1fr 1fr}.meeting-modal{padding:17px}.meeting-modal-head h2{font-size:23px}}
+
+.notes-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.note-card{width:100%;text-align:left;padding:16px;border-radius:17px;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.025));border:1px solid rgba(255,255,255,.07);color:var(--text);transition:.18s ease}
+.note-card:hover{transform:translateY(-2px);border-color:rgba(83,214,255,.22);background:linear-gradient(180deg,rgba(124,99,255,.09),rgba(255,255,255,.025));box-shadow:0 12px 30px rgba(0,0,0,.2)}
+.note-card-top{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}
+.note-card strong{display:block;font-size:14px;margin-top:4px}.note-date{display:block;font-size:9px;color:#9bb0df;text-transform:uppercase;letter-spacing:.08em;font-weight:900}
+.note-arrow{font-size:18px;color:#8fe7ff}.note-meta{font-size:9px;color:var(--muted);margin-top:5px}
+.note-card p{margin:12px 0 10px;color:#dbe4f7;font-size:11px;line-height:1.55;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.note-open{font-size:9px;font-weight:900;color:#b9c8ec;text-transform:uppercase;letter-spacing:.07em}
+@media(max-width:760px){.notes-grid{grid-template-columns:1fr}}
