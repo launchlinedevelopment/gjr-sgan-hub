@@ -115,7 +115,7 @@ function isDone(t){const p=periodKey(t);return state.completions.some(function(c
 function checklistHtml(ts){
   if(!ts.length)return '<div class="empty">No active checklist items.</div>';
   const groups={};ts.forEach(function(t){(groups[t.group_name]||(groups[t.group_name]=[])).push(t)});
-  return Object.keys(groups).map(function(g){return '<div class="check-group"><div class="check-title">'+esc(g)+'</div>'+groups[g].map(function(t){const d=isDone(t);return '<label class="check-row '+(d?'done':'')+'"><input type="checkbox" class="checkToggle" data-id="'+t.id+'" '+(d?'checked':'')+'><div><strong>'+esc(t.title)+'</strong><span>'+esc(t.cadence)+(t.until_date?' · through '+niceDate(t.until_date):'')+'</span></div></label>'}).join('')+'</div>'}).join('');
+  return Object.keys(groups).map(function(g){return '<div class="check-group"><div class="check-title">'+esc(g)+'</div>'+groups[g].map(function(t){const d=isDone(t);return '<label class="check-row '+(d?'done':'')+'"><input type="checkbox" class="checkToggle" data-id="'+t.id+'" '+(d?'checked':'')+'><div><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned by your Council S\'gan · ':'')+esc(t.cadence)+(t.until_date?' · through '+niceDate(t.until_date):'')+'</span></div></label>'}).join('')+'</div>'}).join('');
 }
 
 function occurrence(m,date){
@@ -219,7 +219,7 @@ function counterpartCard(c){
   const initials=c.name.split(' ').map(function(x){return x[0]}).join('').slice(0,2);
   const linked=c.linked_profile_id?profile(c.linked_profile_id):null;
   const meetingCount=meetingCountWithCounterpart(c.id);
-  return '<article class="person-card"><div class="person-head"><div class="avatar">'+esc(initials)+'</div><div><strong>'+esc(c.name)+'</strong><span>'+esc(c.chapter)+'</span></div></div><div class="status-line" style="margin:10px 0"><b>'+meetingCount+'</b> meeting'+(meetingCount===1?'':'s')+' held together</div><div class="person-fields"><label>Last check-in<input class="cpField" data-id="'+c.id+'" data-field="last_check_in" type="date" value="'+(c.last_check_in||'')+'"></label><label>Next follow-up<input class="cpField" data-id="'+c.id+'" data-field="next_follow_up" type="date" value="'+(c.next_follow_up||'')+'"></label></div><label class="note-label">Notes<textarea class="cpField" data-id="'+c.id+'" data-field="notes" rows="2">'+esc(c.notes||'')+'</textarea></label><div style="margin-top:10px">'+(linked?'<span class="pill">Account: '+esc(linked.display_name)+'</span>':'<button class="primary createCp" data-id="'+c.id+'">Create their account</button>')+'</div></article>';
+  return '<article class="person-card"><div class="person-head"><div class="avatar">'+esc(initials)+'</div><div><strong>'+esc(c.name)+'</strong><span>'+esc(c.chapter)+'</span></div></div><div class="status-line" style="margin:10px 0"><b>'+meetingCount+'</b> meeting'+(meetingCount===1?'':'s')+' held together</div><div class="person-fields"><label>Last check-in<input class="cpField" data-id="'+c.id+'" data-field="last_check_in" type="date" value="'+(c.last_check_in||'')+'"></label><label>Next follow-up<input class="cpField" data-id="'+c.id+'" data-field="next_follow_up" type="date" value="'+(c.next_follow_up||'')+'"></label></div><label class="note-label">Notes<textarea class="cpField" data-id="'+c.id+'" data-field="notes" rows="2">'+esc(c.notes||'')+'</textarea></label><div class="person-actions" style="margin-top:10px">'+(linked?'<span class="pill">Account: '+esc(linked.display_name)+'</span><button class="ghost assignTask" data-profile="'+linked.id+'" data-name="'+esc(c.name)+'">+ Assign task</button>':'<button class="primary createCp" data-id="'+c.id+'">Create their account</button>')+'</div></article>';
 }
 
 function visitsHtml(){
@@ -266,7 +266,7 @@ function programListHtml(forms,leader){
     const submittedDate=p.created_at?new Date(p.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
     const feedback=p.council_feedback?'<div class="program-feedback-box"><div class="program-feedback-label">Council feedback</div><p>'+esc(p.council_feedback)+'</p></div>':'';
     const review=leader?'<div class="program-review-panel"><label><span>Review notes / fixes</span><textarea class="programFeedback" data-id="'+p.id+'" rows="4" placeholder="Be specific and constructive — what should they change, add, or clarify?">'+esc(p.council_feedback||'')+'</textarea></label><div class="program-review-actions"><button class="ghost openProgramPdf" data-path="'+esc(p.file_path)+'">Open PDF ↗</button><button class="ghost programDecision needs-changes" data-id="'+p.id+'" data-status="needs_changes">How we can fix this</button><button class="primary programDecision" data-id="'+p.id+'" data-status="accepted">Accept program ✓</button></div></div>':'<div class="program-card-actions"><button class="ghost openProgramPdf" data-path="'+esc(p.file_path)+'">Open PDF ↗</button></div>';
-    return '<article class="program-card '+meta.cls+'"><div class="program-card-top"><div class="program-doc-icon">PDF</div><div class="program-card-title"><span class="program-kicker">'+esc(p.chapter_name)+'</span><h3>'+esc(p.program_name)+'</h3><div class="program-meta">'+(p.program_date?niceDate(p.program_date)+' · ':'')+(submitter&&leader?esc(submitter.display_name)+' · ':'')+(submittedDate?'Submitted '+submittedDate:'')+'</div></div><div class="program-status '+meta.cls+'"><span>'+meta.icon+'</span>'+meta.label+'</div></div>'+
+    return '<article class="program-card '+meta.cls+'"><div class="program-card-top"><div class="program-doc-icon">PDF</div><div class="program-card-title"><h3>'+esc(p.program_name)+'</h3><div class="program-primary-meta"><div><span>Chapter</span><strong>'+esc(p.chapter_name)+'</strong></div><div><span>Program date</span><strong>'+(p.program_date?niceDate(p.program_date):'TBD')+'</strong></div></div><div class="program-meta">'+(submitter&&leader?esc(submitter.display_name)+' · ':'')+(submittedDate?'Submitted '+submittedDate:'')+'</div></div><div class="program-status '+meta.cls+'"><span>'+meta.icon+'</span>'+meta.label+'</div></div>'+
     feedback+review+'</article>';
   }).join('')+'</div></section>';
 }
@@ -291,6 +291,7 @@ function wireView(){
   document.querySelectorAll('.checkToggle').forEach(function(cb){cb.onchange=async function(){const t=state.templates.find(function(x){return x.id===cb.dataset.id});const p=periodKey(t);if(cb.checked){await sb.from('check_completions').insert({template_id:t.id,profile_id:me.id,period_key:p})}else{await sb.from('check_completions').delete().eq('template_id',t.id).eq('profile_id',me.id).eq('period_key',p)}await loadAll();renderShell()}});
   document.querySelectorAll('.cpField').forEach(function(el){el.onchange=async function(){const patch={};patch[el.dataset.field]=el.value;await sb.from('counterparts').update(patch).eq('id',el.dataset.id);await loadAll();renderShell()}});
   document.querySelectorAll('.createCp').forEach(function(btn){btn.onclick=function(){createCounterpartAccount(btn.dataset.id)}});
+  document.querySelectorAll('.assignTask').forEach(function(btn){btn.onclick=function(){assignCounterpartTask(btn.dataset.profile,btn.dataset.name)}});
   document.querySelectorAll('[data-thread]').forEach(function(btn){btn.onclick=function(){activeThread=btn.dataset.thread;renderShell()}});
   const chat=document.getElementById('chatForm');if(chat)chat.onsubmit=sendMessage;
   const mf=document.getElementById('meetingForm');if(mf)mf.onsubmit=addMeeting;
@@ -309,6 +310,21 @@ function wireView(){
   document.querySelectorAll('.openMeeting').forEach(function(btn){btn.onclick=function(){openMeetingModal(btn.dataset.meeting,btn.dataset.date)}});
 }
 
+async function assignCounterpartTask(profileId,name){
+  const title=prompt('Task for '+name+':');
+  if(!title||!title.trim())return;
+  const r=await sb.from('check_templates').insert({
+    council_id:me.council_id,
+    owner_profile_id:profileId,
+    assigned_by:me.id,
+    title:title.trim(),
+    group_name:'Assigned Tasks',
+    cadence:'once',
+    active:true
+  });
+  if(r.error){alert(r.error.message);return;}
+  alert('Task added to '+name+'\'s checklist.');
+}
 async function addPersonalTask(){
   const title=prompt('Task name:');
   if(!title||!title.trim())return;
