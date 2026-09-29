@@ -202,8 +202,27 @@ using (
   or (public.current_profile_role()='council_sgan' and council_id=public.current_council_id())
 );
 
-create policy "read own check templates" on check_templates for select to authenticated
-using (owner_profile_id=auth.uid());
+create policy "read own or managed counterpart check templates" on check_templates for select to authenticated
+using (
+  owner_profile_id=auth.uid()
+  or (
+    public.current_profile_role()='council_sgan'
+    and exists (
+      select 1 from profiles target
+      where target.id=owner_profile_id
+        and target.role='counterpart'
+        and target.council_id=public.current_council_id()
+    )
+  )
+  or (
+    public.current_profile_role()='admin'
+    and exists (
+      select 1 from profiles target
+      where target.id=owner_profile_id
+        and target.role='counterpart'
+    )
+  )
+);
 create policy "insert personal or assigned check templates" on check_templates for insert to authenticated
 with check (
   (owner_profile_id=auth.uid() and (assigned_by is null or assigned_by=auth.uid()))
@@ -232,13 +251,52 @@ using (owner_profile_id=auth.uid()) with check (owner_profile_id=auth.uid());
 create policy "delete own check templates" on check_templates for delete to authenticated
 using (owner_profile_id=auth.uid());
 
-create policy "read own check completions" on check_completions for select to authenticated
-using (profile_id=auth.uid());
+create policy "read own or managed counterpart completions" on check_completions for select to authenticated
+using (
+  profile_id=auth.uid()
+  or (
+    public.current_profile_role()='council_sgan'
+    and exists (
+      select 1 from profiles target
+      where target.id=profile_id
+        and target.role='counterpart'
+        and target.council_id=public.current_council_id()
+    )
+  )
+  or (
+    public.current_profile_role()='admin'
+    and exists (
+      select 1 from profiles target
+      where target.id=profile_id
+        and target.role='counterpart'
+    )
+  )
+);
 create policy "own insert check completions" on check_completions for insert to authenticated with check (profile_id=auth.uid());
 create policy "own delete check completions" on check_completions for delete to authenticated using (profile_id=auth.uid());
 
-create policy "read participating meetings" on meetings for select to authenticated
-using (owner_profile_id=auth.uid() or attendee_profile_id=auth.uid());
+create policy "read participating or managed counterpart meetings" on meetings for select to authenticated
+using (
+  owner_profile_id=auth.uid()
+  or attendee_profile_id=auth.uid()
+  or (
+    public.current_profile_role()='council_sgan'
+    and exists (
+      select 1 from profiles target
+      where target.id=owner_profile_id
+        and target.role='counterpart'
+        and target.council_id=public.current_council_id()
+    )
+  )
+  or (
+    public.current_profile_role()='admin'
+    and exists (
+      select 1 from profiles target
+      where target.id=owner_profile_id
+        and target.role='counterpart'
+    )
+  )
+);
 create policy "insert own meetings" on meetings for insert to authenticated
 with check (owner_profile_id=auth.uid());
 create policy "update own meetings" on meetings for update to authenticated
