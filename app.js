@@ -58,7 +58,7 @@ async function loadAll(){
     sb.from('councils').select('*').order('name'),
     sb.from('counterparts').select('*').order('name'),
     sb.from('check_templates').select('*').eq('active',true).or('until_date.is.null,until_date.gte.'+today),
-    sb.from('check_completions').select('*').eq('profile_id',me.id),
+    sb.from('check_completions').select('*'),
     sb.from('meetings').select('*').order('start_date').order('start_time'),
     sb.from('chapter_visits').select('*').order('visit_date',{ascending:false}),
     sb.from('one_on_one_requests').select('*').order('requested_date').order('requested_start'),
@@ -208,19 +208,81 @@ function requestsLeaderHtml(){
 
 function peopleHtml(){
   const cps=state.counterparts.filter(function(c){return me.role==='admin'||c.council_id===me.council_id});
+  const linkedCount=cps.filter(function(c){return !!c.linked_profile_id}).length;
+  const dueCount=cps.filter(function(c){return c.next_follow_up&&c.next_follow_up<=iso(new Date())}).length;
   const councilField=me.role==='admin'
     ? '<label>Council<select id="cpCouncil">'+state.councils.map(function(c){return '<option value="'+c.id+'" '+(c.id===me.council_id?'selected':'')+'>'+esc(c.name)+' — '+esc(c.display_name)+'</option>'}).join('')+'</select></label>'
     : '';
-  return '<section class="hero"><div class="hero-copy"><div class="eyebrow">COUNTERPART CRM</div><h1>Know your people.</h1><p>Track check-ins, follow-ups, account access, and chapter context.</p></div></section>'+
-  '<section class="card" style="margin-top:15px"><div class="card-head"><div><div class="eyebrow">ADD COUNTERPART</div><h2>Add someone to your council</h2></div></div><form id="counterpartForm" class="form-grid"><label class="wide">Full name<input id="cpName" placeholder="Counterpart name" required></label><label class="wide">Chapter<input id="cpChapter" placeholder="Chapter name" required></label>'+councilField+'<label class="wide">Notes<input id="cpNotes" placeholder="Optional notes"></label><button class="primary">Add counterpart</button></form></section>'+
-  '<section class="card" style="margin-top:15px"><div class="card-head"><div><div class="eyebrow">COUNTERPARTS</div><h2>'+cps.length+' people</h2></div></div><div class="people-grid">'+cps.map(counterpartCard).join('')+'</div></section>';
+  return '<section class="people-hero"><div><div class="eyebrow">COUNTERPART COMMAND CENTER</div><h1>Your people.<br><span>Your pulse.</span></h1><p>See every Chapter S\'gan at a glance — meetings, tasks, calendar, follow-ups, and account access.</p></div><div class="people-hero-stats"><div><strong>'+cps.length+'</strong><span>Counterparts</span></div><div><strong>'+linkedCount+'</strong><span>Accounts live</span></div><div><strong>'+dueCount+'</strong><span>Follow-ups due</span></div></div></section>'+
+  '<section class="people-add-panel"><div class="people-add-copy"><div class="eyebrow">ADD COUNTERPART</div><h2>Bring someone into your council</h2><p>Create their CRM profile first, then create their login when you are ready.</p></div><form id="counterpartForm" class="people-add-form"><label>Full name<input id="cpName" placeholder="Counterpart name" required></label><label>Chapter<input id="cpChapter" placeholder="Chapter name" required></label>'+councilField+'<label>Notes<input id="cpNotes" placeholder="Optional context"></label><button class="primary">+ Add counterpart</button></form></section>'+
+  '<section class="people-board"><div class="people-board-head"><div><div class="eyebrow">YOUR COUNTERPARTS</div><h2>'+cps.length+' people in your network</h2></div><span>Open a workspace to see their tasks + calendar</span></div><div class="people-grid premium">'+cps.map(counterpartCard).join('')+'</div></section>'+
+  '<div id="counterpartWorkspaceHost"></div>';
+}
+function counterpartTaskStats(profileId){
+  const tasks=state.templates.filter(function(t){return t.owner_profile_id===profileId});
+  const done=tasks.filter(function(t){
+    const p=periodKey(t);
+    return state.completions.some(function(c){return c.template_id===t.id&&c.profile_id===profileId&&c.period_key===p});
+  }).length;
+  return {total:tasks.length,done:done,open:Math.max(0,tasks.length-done)};
+}
+function counterpartUpcoming(profileId,days){
+  const out=[],today=new Date();
+  for(let i=0;i<days;i++){
+    const d=new Date(today.getFullYear(),today.getMonth(),today.getDate()+i,12);
+    state.meetings.forEach(function(m){
+      if(m.owner_profile_id===profileId&&occurrence(m,d))out.push({meeting:m,date:d});
+    });
+  }
+  return out.sort(function(a,b){return iso(a.date).localeCompare(iso(b.date))||String(a.meeting.start_time).localeCompare(String(b.meeting.start_time))});
 }
 function counterpartCard(c){
   const initials=c.name.split(' ').map(function(x){return x[0]}).join('').slice(0,2);
   const linked=c.linked_profile_id?profile(c.linked_profile_id):null;
   const meetingCount=meetingCountWithCounterpart(c.id);
-  return '<article class="person-card"><div class="person-head"><div class="avatar">'+esc(initials)+'</div><div><strong>'+esc(c.name)+'</strong><span>'+esc(c.chapter)+'</span></div></div><div class="status-line" style="margin:10px 0"><b>'+meetingCount+'</b> meeting'+(meetingCount===1?'':'s')+' held together</div><div class="person-fields"><label>Last check-in<input class="cpField" data-id="'+c.id+'" data-field="last_check_in" type="date" value="'+(c.last_check_in||'')+'"></label><label>Next follow-up<input class="cpField" data-id="'+c.id+'" data-field="next_follow_up" type="date" value="'+(c.next_follow_up||'')+'"></label></div><label class="note-label">Notes<textarea class="cpField" data-id="'+c.id+'" data-field="notes" rows="2">'+esc(c.notes||'')+'</textarea></label><div class="person-actions" style="margin-top:10px">'+(linked?'<span class="pill">Account: '+esc(linked.display_name)+'</span><button class="ghost assignTask" data-profile="'+linked.id+'" data-name="'+esc(c.name)+'">+ Assign task</button>':'<button class="primary createCp" data-id="'+c.id+'">Create their account</button>')+'</div></article>';
+  const stats=linked?counterpartTaskStats(linked.id):{total:0,done:0,open:0};
+  const upcoming=linked?counterpartUpcoming(linked.id,30):[];
+  const next=upcoming[0];
+  const followDue=c.next_follow_up&&c.next_follow_up<=iso(new Date());
+  return '<article class="person-card premium '+(followDue?'follow-due':'')+'"><div class="person-card-glow"></div><div class="person-card-top"><div class="avatar premium">'+esc(initials)+'</div><div class="person-identity"><strong>'+esc(c.name)+'</strong><span>'+esc(c.chapter)+'</span></div><div class="account-dot '+(linked?'live':'offline')+'"><i></i>'+(linked?'Live':'No login')+'</div></div>'+
+  '<div class="person-metrics"><div><span>Meetings</span><strong>'+meetingCount+'</strong></div><div><span>Open tasks</span><strong>'+stats.open+'</strong></div><div><span>Next event</span><strong>'+(next?niceDate(iso(next.date)):'—')+'</strong></div></div>'+
+  '<div class="person-next"><span>Next follow-up</span><strong>'+(c.next_follow_up?niceDate(c.next_follow_up):'Not set')+'</strong>'+(followDue?'<b>Due</b>':'')+'</div>'+
+  '<div class="person-fields premium"><label>Last check-in<input class="cpField" data-id="'+c.id+'" data-field="last_check_in" type="date" value="'+(c.last_check_in||'')+'"></label><label>Next follow-up<input class="cpField" data-id="'+c.id+'" data-field="next_follow_up" type="date" value="'+(c.next_follow_up||'')+'"></label></div>'+
+  '<label class="note-label premium">CRM notes<textarea class="cpField" data-id="'+c.id+'" data-field="notes" rows="2" placeholder="Add context about this counterpart...">'+esc(c.notes||'')+'</textarea></label>'+
+  '<div class="person-actions premium">'+(linked?
+    '<button class="primary openWorkspace" data-id="'+c.id+'">Open workspace →</button><button class="ghost assignTask" data-profile="'+linked.id+'" data-name="'+esc(c.name)+'">+ Assign task</button>':
+    '<button class="primary createCp" data-id="'+c.id+'">Create their account</button>')+'</div></article>';
 }
+function counterpartWorkspaceHtml(counterpartId){
+  const c=state.counterparts.find(function(x){return x.id===counterpartId});if(!c)return '';
+  const linked=c.linked_profile_id?profile(c.linked_profile_id):null;
+  if(!linked)return '';
+  const tasks=state.templates.filter(function(t){return t.owner_profile_id===linked.id});
+  const upcoming=counterpartUpcoming(linked.id,60).slice(0,12);
+  const stats=counterpartTaskStats(linked.id);
+  const taskHtml=tasks.length?tasks.map(function(t){
+    const p=periodKey(t);
+    const done=state.completions.some(function(x){return x.template_id===t.id&&x.profile_id===linked.id&&x.period_key===p});
+    return '<div class="workspace-task '+(done?'done':'')+'"><div class="workspace-check">'+(done?'✓':'')+'</div><div><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned task · ':'Personal task · ')+esc(t.cadence)+'</span></div></div>';
+  }).join(''):'<div class="workspace-empty">No tasks on their checklist yet.</div>';
+  const calendarHtml=upcoming.length?upcoming.map(function(x){
+    const m=x.meeting;
+    return '<div class="workspace-event"><div class="workspace-date"><strong>'+new Date(iso(x.date)+'T12:00:00').getDate()+'</strong><span>'+new Date(iso(x.date)+'T12:00:00').toLocaleDateString('en-US',{month:'short'})+'</span></div><div><strong>'+esc(m.title)+'</strong><span>'+meetingTimeText(m)+' · '+esc(m.mode)+'</span></div></div>';
+  }).join(''):'<div class="workspace-empty">No upcoming calendar events.</div>';
+  return '<div class="counterpart-workspace-backdrop" id="counterpartWorkspaceBackdrop"><section class="counterpart-workspace"><div class="workspace-head"><div><div class="eyebrow">CHAPTER S\'GAN WORKSPACE</div><h2>'+esc(c.name)+'</h2><p>'+esc(c.chapter)+'</p></div><button class="modal-close" id="counterpartWorkspaceClose">×</button></div>'+
+  '<div class="workspace-summary"><div><span>Checklist</span><strong>'+stats.done+'/'+stats.total+'</strong></div><div><span>Open tasks</span><strong>'+stats.open+'</strong></div><div><span>Meetings together</span><strong>'+meetingCountWithCounterpart(c.id)+'</strong></div><div><span>Upcoming events</span><strong>'+upcoming.length+'</strong></div></div>'+
+  '<div class="workspace-columns"><section><div class="workspace-section-head"><div><div class="eyebrow">CHECKLIST</div><h3>Tasks</h3></div><button class="tiny-btn assignTask" data-profile="'+linked.id+'" data-name="'+esc(c.name)+'">+ Assign task</button></div><div class="workspace-task-list">'+taskHtml+'</div></section>'+
+  '<section><div class="workspace-section-head"><div><div class="eyebrow">CALENDAR</div><h3>Upcoming</h3></div></div><div class="workspace-event-list">'+calendarHtml+'</div></section></div>'+
+  '</section></div>';
+}
+function openCounterpartWorkspace(id){
+  const host=document.getElementById('counterpartWorkspaceHost');if(!host)return;
+  host.innerHTML=counterpartWorkspaceHtml(id);
+  const close=document.getElementById('counterpartWorkspaceClose');if(close)close.onclick=closeCounterpartWorkspace;
+  const bg=document.getElementById('counterpartWorkspaceBackdrop');if(bg)bg.onclick=function(e){if(e.target.id==='counterpartWorkspaceBackdrop')closeCounterpartWorkspace()};
+  document.querySelectorAll('.counterpart-workspace .assignTask').forEach(function(btn){btn.onclick=async function(){await assignCounterpartTask(btn.dataset.profile,btn.dataset.name);openCounterpartWorkspace(id)}});
+}
+function closeCounterpartWorkspace(){const host=document.getElementById('counterpartWorkspaceHost');if(host)host.innerHTML=''}
 
 function visitsHtml(){
   const list=state.visits.filter(function(x){return x.created_by===me.id});
@@ -292,6 +354,7 @@ function wireView(){
   document.querySelectorAll('.cpField').forEach(function(el){el.onchange=async function(){const patch={};patch[el.dataset.field]=el.value;await sb.from('counterparts').update(patch).eq('id',el.dataset.id);await loadAll();renderShell()}});
   document.querySelectorAll('.createCp').forEach(function(btn){btn.onclick=function(){createCounterpartAccount(btn.dataset.id)}});
   document.querySelectorAll('.assignTask').forEach(function(btn){btn.onclick=function(){assignCounterpartTask(btn.dataset.profile,btn.dataset.name)}});
+  document.querySelectorAll('.openWorkspace').forEach(function(btn){btn.onclick=function(){openCounterpartWorkspace(btn.dataset.id)}});
   document.querySelectorAll('[data-thread]').forEach(function(btn){btn.onclick=function(){activeThread=btn.dataset.thread;renderShell()}});
   const chat=document.getElementById('chatForm');if(chat)chat.onsubmit=sendMessage;
   const mf=document.getElementById('meetingForm');if(mf)mf.onsubmit=addMeeting;
@@ -322,8 +385,10 @@ async function assignCounterpartTask(profileId,name){
     cadence:'once',
     active:true
   });
-  if(r.error){alert(r.error.message);return;}
+  if(r.error){alert(r.error.message);return false;}
+  await loadAll();
   alert('Task added to '+name+'\'s checklist.');
+  return true;
 }
 async function addPersonalTask(){
   const title=prompt('Task name:');
