@@ -3,7 +3,7 @@ const app=document.getElementById('app');
 const configured=!!(cfg.supabaseUrl&&cfg.supabaseAnonKey);
 const sb=configured?window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey):null;
 let session=null, me=null, council=null, state={};
-let activeView='dashboard', activeThread=null;
+let activeView='dashboard', activeThread=null, scheduleWeekOffset=0;
 
 document.addEventListener('click',function(e){
   const nav=e.target.closest('[data-view]');
@@ -105,7 +105,7 @@ function dashboardHtml(){
   return '<section class="hero"><div class="hero-copy"><div class="eyebrow">GREATER JERSEY REGION · '+esc(council?council.name:'')+'</div><h1>Lead the week.<br><span>Stay connected.</span></h1><p>'+dashboardSubtitle()+'</p></div><div class="hero-ring" style="--pct:'+pct+'%"><div><strong>'+pct+'%</strong><span>weekly progress</span></div></div></section>'+
   '<section class="stats"><div class="stat"><span>Checklist</span><strong>'+done+'/'+templates.length+'</strong><small>completed</small></div><div class="stat"><span>Next meeting</span><strong>'+(next?fmtTime(next.meeting.start_time):'—')+'</strong><small>'+(next?esc(next.meeting.title):'nothing upcoming')+'</small></div><div class="stat"><span>Follow-ups</span><strong>'+needs+'</strong><small>counterparts due</small></div><div class="stat"><span>1:1 requests</span><strong>'+openReq+'</strong><small>open requests</small></div></section>'+
   '<div class="grid-2"><section class="card"><div class="card-head"><div><div class="eyebrow">MY TASKS</div><h2>Personal tasks</h2></div><button id="addTaskBtn" class="primary">+ Add task</button></div>'+checklistHtml(templates)+'</section><section class="card"><div class="card-head"><div><div class="eyebrow">UP NEXT</div><h2>Schedule</h2></div></div>'+upcomingHtml(6)+'</section></div>'+
-  (me.role==='counterpart'?counterpartQuickHtml():'');
+  (me.role==='counterpart'?counterpartQuickHtml():'')+'<div id="meetingModalHost"></div>';
 }
 function dashboardSubtitle(){return me.role==='counterpart'?'Your council schedule, 1:1s, messages, and action items in one place.':'Counterparts, focus chapters, steering, meetings, and council follow-ups in one place.'}
 
@@ -115,7 +115,7 @@ function isDone(t){const p=periodKey(t);return state.completions.some(function(c
 function checklistHtml(ts){
   if(!ts.length)return '<div class="empty">No active checklist items.</div>';
   const groups={};ts.forEach(function(t){(groups[t.group_name]||(groups[t.group_name]=[])).push(t)});
-  return Object.keys(groups).map(function(g){return '<div class="check-group"><div class="check-title">'+esc(g)+'</div>'+groups[g].map(function(t){const d=isDone(t);return '<label class="check-row '+(d?'done':'')+'"><input type="checkbox" class="checkToggle" data-id="'+t.id+'" '+(d?'checked':'')+'><div><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned by your Council S\'gan · ':'')+esc(t.cadence)+(t.until_date?' · through '+niceDate(t.until_date):'')+'</span></div></label>'}).join('')+'</div>'}).join('');
+  return Object.keys(groups).map(function(g){return '<div class="check-group"><div class="check-title">'+esc(g)+'</div>'+groups[g].map(function(t){const d=isDone(t);return '<label class="check-row '+(d?'done':'')+'"><input type="checkbox" class="checkToggle" data-id="'+t.id+'" '+(d?'checked':'')+'><div><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned by your Council S\'gan · ':'')+esc(t.cadence)+(t.due_date?' · due '+niceDate(t.due_date):'')+(t.until_date?' · through '+niceDate(t.until_date):'')+'</span></div></label>'}).join('')+'</div>'}).join('');
 }
 
 function occurrence(m,date){
@@ -144,10 +144,22 @@ function meetingCountWithCounterpart(counterpartId){
 function meetingTimeText(m){return m.time_tbd?'Time TBD':fmtTime(m.start_time)+(m.end_time?'–'+fmtTime(m.end_time):'')}
 function upcomingHtml(n){const list=nextOccurrences(35).slice(0,n);if(!list.length)return '<div class="empty">Nothing upcoming.</div>';return '<div class="list">'+list.map(function(x){const m=x.meeting,contact=meetingContactName(m);return '<button class="item meeting-row openMeeting" data-meeting="'+m.id+'" data-date="'+iso(x.date)+'"><div><strong>'+esc(m.title)+'</strong><span>'+niceDate(iso(x.date))+' · '+meetingTimeText(m)+' · '+esc(m.mode)+(contact?' · with '+esc(contact):'')+(m.recurrence!=='none'?' · '+(m.recurrence==='weekly'?'Weekly':'Every other week'):'')+'</span></div><div class="meeting-open">View details →</div></button>'}).join('')+'</div>'}
 
+function scheduleBaseDate(){
+  const d=new Date();
+  d.setDate(d.getDate()+scheduleWeekOffset*7);
+  return d;
+}
 function scheduleHtml(){
-  const week=weekDays(new Date()),occ=nextOccurrences(60);
+  const base=scheduleBaseDate(),week=weekDays(base);
   const contacts=state.counterparts.filter(function(c){return c.council_id===me.council_id});
-  let html='<section class="card"><div class="card-head"><div><div class="eyebrow">SCHEDULE</div><h2>Your BBYO week</h2></div></div><div class="schedule-board">'+week.map(function(d){const list=occ.filter(function(x){return iso(x.date)===iso(d)});return '<div class="day-col"><h4>'+dayName(d)+' · '+(d.getMonth()+1)+'/'+d.getDate()+'</h4>'+ (list.length?list.map(function(x){const contact=meetingContactName(x.meeting);return '<button class="meeting-mini openMeeting" data-meeting="'+x.meeting.id+'" data-date="'+iso(x.date)+'"><strong>'+esc(x.meeting.title)+'</strong><span>'+meetingTimeText(x.meeting)+(contact?' · with '+esc(contact):'')+'</span></button>'}).join(''):'<span class="muted" style="font-size:9px">Open</span>')+'</div>'}).join('')+'</div></section>';
+  const occ=[];
+  week.forEach(function(d){
+    state.meetings.forEach(function(m){
+      if((m.owner_profile_id===me.id||m.attendee_profile_id===me.id)&&occurrence(m,d))occ.push({meeting:m,date:d});
+    });
+  });
+  const label=niceDate(iso(week[0]))+' – '+niceDate(iso(week[6]));
+  let html='<section class="card schedule-shell"><div class="schedule-toolbar"><div><div class="eyebrow">SCHEDULE</div><h2>'+label+'</h2></div><div class="schedule-nav"><button class="ghost" id="prevWeekBtn">← Previous</button><button class="ghost" id="todayWeekBtn">This week</button><button class="ghost" id="nextWeekBtn">Next →</button></div></div><div class="schedule-board">'+week.map(function(d){const list=occ.filter(function(x){return iso(x.date)===iso(d)});return '<div class="day-col '+(iso(d)===iso(new Date())?'today':'')+'"><h4>'+dayName(d)+' · '+(d.getMonth()+1)+'/'+d.getDate()+'</h4>'+ (list.length?list.map(function(x){const contact=meetingContactName(x.meeting);return '<button class="meeting-mini openMeeting" data-meeting="'+x.meeting.id+'" data-date="'+iso(x.date)+'"><strong>'+esc(x.meeting.title)+'</strong><span>'+meetingTimeText(x.meeting)+(contact?' · with '+esc(contact):'')+'</span></button>'}).join(''):'<span class="muted" style="font-size:9px">Open</span>')+'</div>'}).join('')+'</div></section>';
   if(me.role!=='counterpart'){
     html+='<section class="card" style="margin-top:15px"><div class="eyebrow">ADD MEETING</div><h2>Build your schedule</h2><form id="meetingForm" class="form-grid"><label class="wide">Meeting name<input id="mTitle" required></label><label class="wide">Who are you meeting with?<select id="mCounterpart"><option value="">No specific contact</option><option value="__GJR_STAFF__">GJR Staff</option>'+contacts.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+' — '+esc(c.chapter)+'</option>'}).join('')+'</select></label><label>Type<select id="mMode"><option>Online</option><option>In-Person</option></select></label><label>Repeats<select id="mRepeat"><option value="none">One time</option><option value="weekly">Weekly</option><option value="biweekly">Every other week</option></select></label><label>Date<input id="mDate" type="date" required></label><label>Starts<input id="mStart" type="time" required></label><label>Ends<input id="mEnd" type="time"></label><label>Location<input id="mLocation"></label><label class="wide">Meeting link<input id="mUrl" type="url"></label><button class="primary">Add meeting</button></form></section>';
     html+=requestsLeaderHtml();
@@ -224,7 +236,13 @@ function counterpartTaskStats(profileId){
     const p=periodKey(t);
     return state.completions.some(function(c){return c.template_id===t.id&&c.profile_id===profileId&&c.period_key===p});
   }).length;
-  return {total:tasks.length,done:done,open:Math.max(0,tasks.length-done)};
+  const today=iso(new Date());
+  const overdue=tasks.filter(function(t){
+    const p=periodKey(t);
+    const isDone=state.completions.some(function(c){return c.template_id===t.id&&c.profile_id===profileId&&c.period_key===p});
+    return !isDone&&t.due_date&&t.due_date<today;
+  }).length;
+  return {total:tasks.length,done:done,open:Math.max(0,tasks.length-done),overdue:overdue};
 }
 function counterpartUpcoming(profileId,days){
   const out=[],today=new Date();
@@ -263,14 +281,15 @@ function counterpartWorkspaceHtml(counterpartId){
   const taskHtml=tasks.length?tasks.map(function(t){
     const p=periodKey(t);
     const done=state.completions.some(function(x){return x.template_id===t.id&&x.profile_id===linked.id&&x.period_key===p});
-    return '<div class="workspace-task '+(done?'done':'')+'"><div class="workspace-check">'+(done?'✓':'')+'</div><div><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned task · ':'Personal task · ')+esc(t.cadence)+'</span></div></div>';
+    const overdue=!done&&t.due_date&&t.due_date<iso(new Date());
+    return '<div class="workspace-task '+(done?'done ':'')+(overdue?'overdue':'')+'"><div class="workspace-check">'+(done?'✓':'')+'</div><div class="workspace-task-copy"><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned task':'Personal task')+(t.due_date?' · Due '+niceDate(t.due_date):' · No deadline')+'</span></div><div class="workspace-task-state '+(done?'done':overdue?'overdue':'open')+'">'+(done?'Completed':overdue?'Overdue':'Open')+'</div></div>';
   }).join(''):'<div class="workspace-empty">No tasks on their checklist yet.</div>';
   const calendarHtml=upcoming.length?upcoming.map(function(x){
     const m=x.meeting;
     return '<div class="workspace-event"><div class="workspace-date"><strong>'+new Date(iso(x.date)+'T12:00:00').getDate()+'</strong><span>'+new Date(iso(x.date)+'T12:00:00').toLocaleDateString('en-US',{month:'short'})+'</span></div><div><strong>'+esc(m.title)+'</strong><span>'+meetingTimeText(m)+' · '+esc(m.mode)+'</span></div></div>';
   }).join(''):'<div class="workspace-empty">No upcoming calendar events.</div>';
   return '<div class="counterpart-workspace-backdrop" id="counterpartWorkspaceBackdrop"><section class="counterpart-workspace"><div class="workspace-head"><div><div class="eyebrow">CHAPTER S\'GAN WORKSPACE</div><h2>'+esc(c.name)+'</h2><p>'+esc(c.chapter)+'</p></div><button class="modal-close" id="counterpartWorkspaceClose">×</button></div>'+
-  '<div class="workspace-summary"><div><span>Checklist</span><strong>'+stats.done+'/'+stats.total+'</strong></div><div><span>Open tasks</span><strong>'+stats.open+'</strong></div><div><span>Meetings together</span><strong>'+meetingCountWithCounterpart(c.id)+'</strong></div><div><span>Upcoming events</span><strong>'+upcoming.length+'</strong></div></div>'+
+  '<div class="workspace-summary"><div><span>Completed</span><strong>'+stats.done+'/'+stats.total+'</strong></div><div><span>Open tasks</span><strong>'+stats.open+'</strong></div><div><span>Overdue</span><strong>'+stats.overdue+'</strong></div><div><span>Upcoming events</span><strong>'+upcoming.length+'</strong></div></div>'+
   '<div class="workspace-columns"><section><div class="workspace-section-head"><div><div class="eyebrow">CHECKLIST</div><h3>Tasks</h3></div><button class="tiny-btn assignTask" data-profile="'+linked.id+'" data-name="'+esc(c.name)+'">+ Assign task</button></div><div class="workspace-task-list">'+taskHtml+'</div></section>'+
   '<section><div class="workspace-section-head"><div><div class="eyebrow">CALENDAR</div><h3>Upcoming</h3></div></div><div class="workspace-event-list">'+calendarHtml+'</div></section></div>'+
   '</section></div>';
@@ -358,6 +377,9 @@ function wireView(){
   document.querySelectorAll('[data-thread]').forEach(function(btn){btn.onclick=function(){activeThread=btn.dataset.thread;renderShell()}});
   const chat=document.getElementById('chatForm');if(chat)chat.onsubmit=sendMessage;
   const mf=document.getElementById('meetingForm');if(mf)mf.onsubmit=addMeeting;
+  const prevWeek=document.getElementById('prevWeekBtn');if(prevWeek)prevWeek.onclick=function(){scheduleWeekOffset--;renderShell()};
+  const todayWeek=document.getElementById('todayWeekBtn');if(todayWeek)todayWeek.onclick=function(){scheduleWeekOffset=0;renderShell()};
+  const nextWeek=document.getElementById('nextWeekBtn');if(nextWeek)nextWeek.onclick=function(){scheduleWeekOffset++;renderShell()};
   const vf=document.getElementById('visitForm');if(vf)vf.onsubmit=addVisit;
   const at=document.getElementById('addTaskBtn');if(at)at.onclick=addPersonalTask;
   const of=document.getElementById('oneForm');if(of)of.onsubmit=requestOne;
@@ -375,7 +397,9 @@ function wireView(){
 
 async function assignCounterpartTask(profileId,name){
   const title=prompt('Task for '+name+':');
-  if(!title||!title.trim())return;
+  if(!title||!title.trim())return false;
+  const deadline=prompt('Deadline for '+name+' (YYYY-MM-DD), or leave blank for no deadline:')||'';
+  if(deadline&&!/^\d{4}-\d{2}-\d{2}$/.test(deadline)){alert('Use YYYY-MM-DD for the deadline.');return false;}
   const r=await sb.from('check_templates').insert({
     council_id:me.council_id,
     owner_profile_id:profileId,
@@ -383,11 +407,12 @@ async function assignCounterpartTask(profileId,name){
     title:title.trim(),
     group_name:'Assigned Tasks',
     cadence:'once',
+    due_date:deadline||null,
     active:true
   });
   if(r.error){alert(r.error.message);return false;}
   await loadAll();
-  alert('Task added to '+name+'\'s checklist.');
+  alert('Task added to '+name+'\'s checklist'+(deadline?' with a deadline of '+niceDate(deadline):'')+'.');
   return true;
 }
 async function addPersonalTask(){
