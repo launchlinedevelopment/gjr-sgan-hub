@@ -318,7 +318,8 @@ function programStatusMeta(status){
   return {label:'In review',cls:'submitted',icon:'•'};
 }
 function programsHtml(){
-  const forms=(state.programs||[]).filter(function(x){return me.role==='admin'||x.council_id===me.council_id||x.submitted_by===me.id});
+  const allForms=(state.programs||[]).filter(function(x){return me.role==='admin'||x.council_id===me.council_id||x.submitted_by===me.id});
+  const forms=me.role==='counterpart'?allForms:allForms.filter(function(x){return !(x.hidden_by_profiles||[]).includes(me.id)});
   if(me.role==='counterpart'){
     const submitted=forms.filter(function(x){return x.status==='submitted'}).length;
     const accepted=forms.filter(function(x){return x.status==='accepted'}).length;
@@ -333,8 +334,9 @@ function programsHtml(){
   const waiting=forms.filter(function(x){return x.status==='submitted'}).length;
   const changes=forms.filter(function(x){return x.status==='needs_changes'}).length;
   const accepted=forms.filter(function(x){return x.status==='accepted'}).length;
+  const hidden=allForms.filter(function(x){return (x.hidden_by_profiles||[]).includes(me.id)});
   return '<section class="program-hero leader"><div><div class="eyebrow">PROGRAM REVIEW DESK</div><h1>Review smarter.<br><span>Build better programs.</span></h1><p>Open the PDF, leave useful feedback, and move each submission forward.</p></div><div class="program-stat-stack"><div><strong>'+waiting+'</strong><span>Waiting</span></div><div><strong>'+changes+'</strong><span>Needs updates</span></div><div><strong>'+accepted+'</strong><span>Accepted</span></div></div></section>'+
-  programListHtml(forms,true);
+  programListHtml(forms,true)+hiddenProgramsHtml(hidden);
 }
 function programListHtml(forms,leader){
   if(!forms.length)return '<section class="program-empty"><div class="program-empty-icon">▤</div><h3>No program forms yet</h3><p>'+(leader?'New chapter submissions will show up here.':'Your submitted forms will show up here.')+'</p></section>';
@@ -345,11 +347,16 @@ function programListHtml(forms,leader){
   return '<section class="program-board"><div class="program-board-head"><div><div class="eyebrow">'+(leader?'REVIEW QUEUE':'MY SUBMISSIONS')+'</div><h2>'+ordered.length+' program'+(ordered.length===1?'':'s')+'</h2></div><span class="program-board-hint">'+(leader?'Newest and waiting items first':'Tap the PDF anytime to reopen it')+'</span></div><div class="program-grid">'+ordered.map(function(p){
     const submitter=profile(p.submitted_by),meta=programStatusMeta(p.status);
     const submittedDate=p.created_at?new Date(p.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
-    const feedback=p.council_feedback?'<div class="program-feedback-box"><div class="program-feedback-label">Council feedback</div><p>'+esc(p.council_feedback)+'</p></div>':'';
-    const review=leader?'<div class="program-review-panel"><label><span>Review notes / fixes</span><textarea class="programFeedback" data-id="'+p.id+'" rows="4" placeholder="Be specific and constructive — what should they change, add, or clarify?">'+esc(p.council_feedback||'')+'</textarea></label><div class="program-review-actions"><button class="ghost openProgramPdf" data-path="'+esc(p.file_path)+'">Open PDF ↗</button><button class="ghost programDecision needs-changes" data-id="'+p.id+'" data-status="needs_changes">How we can fix this</button><button class="primary programDecision" data-id="'+p.id+'" data-status="accepted">Accept program ✓</button></div></div>':'<div class="program-card-actions"><button class="ghost openProgramPdf" data-path="'+esc(p.file_path)+'">Open PDF ↗</button></div>';
+    const feedback=p.council_feedback?'<div class="program-feedback-box premium"><div class="program-feedback-icon">✦</div><div><div class="program-feedback-label">Council feedback</div><p>'+esc(p.council_feedback)+'</p>'+(p.reviewed_at?'<span class="program-feedback-time">Updated '+new Date(p.reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</span>':'')+'</div></div>':'';
+    const review=leader?'<div class="program-review-panel"><label><span>Review notes / fixes</span><textarea class="programFeedback" data-id="'+p.id+'" rows="4" placeholder="Be specific and constructive — what should they change, add, or clarify?">'+esc(p.council_feedback||'')+'</textarea></label><div class="program-review-actions"><button class="ghost openProgramPdf" data-path="'+esc(p.file_path)+'">Open PDF ↗</button><button class="ghost programDecision needs-changes" data-id="'+p.id+'" data-status="needs_changes">How we can fix this</button><button class="primary programDecision" data-id="'+p.id+'" data-status="accepted">Accept program ✓</button></div><div class="program-management-actions"><button class="ghost hideProgram" data-id="'+p.id+'">Hide from my view</button><button class="danger-btn deleteProgram" data-id="'+p.id+'" data-path="'+esc(p.file_path)+'">Delete program</button></div></div>':'<div class="program-card-actions"><button class="ghost openProgramPdf" data-path="'+esc(p.file_path)+'">Open PDF ↗</button></div>';
     return '<article class="program-card '+meta.cls+'"><div class="program-card-top"><div class="program-doc-icon">PDF</div><div class="program-card-title"><h3>'+esc(p.program_name)+'</h3><div class="program-primary-meta"><div><span>Chapter</span><strong>'+esc(p.chapter_name)+'</strong></div><div><span>Program date</span><strong>'+(p.program_date?niceDate(p.program_date):'TBD')+'</strong></div></div><div class="program-meta">'+(submitter&&leader?esc(submitter.display_name)+' · ':'')+(submittedDate?'Submitted '+submittedDate:'')+'</div></div><div class="program-status '+meta.cls+'"><span>'+meta.icon+'</span>'+meta.label+'</div></div>'+
     feedback+review+'</article>';
   }).join('')+'</div></section>';
+}
+
+function hiddenProgramsHtml(forms){
+  if(!forms.length)return '';
+  return '<section class="program-hidden"><div class="program-hidden-head"><div><div class="eyebrow">HIDDEN FROM YOUR VIEW</div><h3>'+forms.length+' hidden program'+(forms.length===1?'':'s')+'</h3></div></div><div class="program-hidden-list">'+forms.map(function(p){return '<div class="program-hidden-row"><div><strong>'+esc(p.program_name)+'</strong><span>'+esc(p.chapter_name)+(p.program_date?' · '+niceDate(p.program_date):'')+'</span></div><button class="ghost unhideProgram" data-id="'+p.id+'">Restore</button></div>'}).join('')+'</div></section>';
 }
 
 function messagesHtml(){
@@ -391,6 +398,9 @@ function wireView(){
   const pFile=document.getElementById('pFile');if(pFile)pFile.onchange=function(){const zone=document.querySelector('.program-upload-zone');if(!zone)return;const file=pFile.files&&pFile.files[0];zone.classList.toggle('has-file',!!file);const name=zone.querySelector('.upload-chip');if(name&&file)name.textContent=file.name.length>18?file.name.slice(0,15)+'...':file.name;};
   document.querySelectorAll('.openProgramPdf').forEach(function(btn){btn.onclick=async function(){const r=await sb.storage.from('program-planning-forms').createSignedUrl(btn.dataset.path,300);if(r.error){alert(r.error.message);return;}window.open(r.data.signedUrl,'_blank')}});
   document.querySelectorAll('.programDecision').forEach(function(btn){btn.onclick=async function(){const box=document.querySelector('.programFeedback[data-id="'+btn.dataset.id+'"]');const feedback=box?box.value.trim():'';if(btn.dataset.status==='needs_changes'&&!feedback){alert('Add a helpful note explaining how the program can be improved.');return;}const r=await sb.from('program_planning_forms').update({status:btn.dataset.status,council_feedback:feedback,reviewed_by:me.id,reviewed_at:new Date().toISOString()}).eq('id',btn.dataset.id);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}});
+  document.querySelectorAll('.hideProgram').forEach(function(btn){btn.onclick=async function(){const p=state.programs.find(function(x){return x.id===btn.dataset.id});if(!p)return;const hidden=(p.hidden_by_profiles||[]).filter(function(id){return id!==me.id});hidden.push(me.id);const r=await sb.from('program_planning_forms').update({hidden_by_profiles:hidden}).eq('id',p.id);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}});
+  document.querySelectorAll('.unhideProgram').forEach(function(btn){btn.onclick=async function(){const p=state.programs.find(function(x){return x.id===btn.dataset.id});if(!p)return;const hidden=(p.hidden_by_profiles||[]).filter(function(id){return id!==me.id});const r=await sb.from('program_planning_forms').update({hidden_by_profiles:hidden}).eq('id',p.id);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}});
+  document.querySelectorAll('.deleteProgram').forEach(function(btn){btn.onclick=async function(){if(!confirm('Delete this program permanently? This cannot be undone.'))return;const path=btn.dataset.path;if(path){const sr=await sb.storage.from('program-planning-forms').remove([path]);if(sr.error){alert(sr.error.message);return;}}const r=await sb.from('program_planning_forms').delete().eq('id',btn.dataset.id);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}});
   document.querySelectorAll('.saveMeetingNote').forEach(function(btn){btn.onclick=saveMeetingNote});
   document.querySelectorAll('.openMeeting').forEach(function(btn){btn.onclick=function(){openMeetingModal(btn.dataset.meeting,btn.dataset.date)}});
 }
