@@ -34,6 +34,7 @@ create table if not exists check_templates (
   council_id uuid references councils(id) on delete cascade,
   owner_profile_id uuid not null references profiles(id) on delete cascade,
   assigned_by uuid references profiles(id) on delete set null,
+  due_date date,
   title text not null,
   group_name text not null default 'General',
   cadence text not null check (cadence in ('once','weekly','daily')),
@@ -246,8 +247,30 @@ with check (
     )
   )
 );
-create policy "update own check templates" on check_templates for update to authenticated
-using (owner_profile_id=auth.uid()) with check (owner_profile_id=auth.uid());
+create policy "update own or assigned check templates" on check_templates for update to authenticated
+using (
+  owner_profile_id=auth.uid()
+  or (
+    assigned_by=auth.uid()
+    and public.current_profile_role()='council_sgan'
+    and exists (
+      select 1 from profiles target
+      where target.id=owner_profile_id
+        and target.role='counterpart'
+        and target.council_id=public.current_council_id()
+    )
+  )
+  or (
+    assigned_by=auth.uid()
+    and public.current_profile_role()='admin'
+    and exists (
+      select 1 from profiles target
+      where target.id=owner_profile_id
+        and target.role='counterpart'
+    )
+  )
+)
+with check (owner_profile_id=auth.uid() or assigned_by=auth.uid());
 create policy "delete own check templates" on check_templates for delete to authenticated
 using (owner_profile_id=auth.uid());
 
