@@ -406,6 +406,7 @@ create table if not exists program_planning_forms (
   file_name text not null,
   status text not null default 'submitted' check (status in ('submitted','accepted','needs_changes')),
   council_feedback text default '',
+  hidden_by_profiles uuid[] not null default '{}'::uuid[],
   ai_status text not null default 'pending' check (ai_status in ('pending','ready','unavailable','error')),
   ai_summary text default '',
   ai_strengths text default '',
@@ -421,3 +422,21 @@ create policy "leaders review forms" on program_planning_forms for update to aut
 insert into storage.buckets (id,name,public,file_size_limit,allowed_mime_types) values ('program-planning-forms','program-planning-forms',false,10485760,array['application/pdf']) on conflict (id) do nothing;
 create policy "program pdf upload" on storage.objects for insert to authenticated with check (bucket_id='program-planning-forms' and public.current_profile_role()='counterpart' and (storage.foldername(name))[1]=public.current_council_id()::text and (storage.foldername(name))[2]=auth.uid()::text);
 create policy "program pdf read" on storage.objects for select to authenticated using (bucket_id='program-planning-forms' and (owner_id=auth.uid()::text or public.current_profile_role()='admin' or (public.current_profile_role()='council_sgan' and (storage.foldername(name))[1]=public.current_council_id()::text)));
+
+create policy "leaders delete program forms" on program_planning_forms for delete to authenticated
+using (
+  public.current_profile_role()='admin'
+  or (public.current_profile_role()='council_sgan' and council_id=public.current_council_id())
+);
+
+create policy "leaders delete program pdf" on storage.objects for delete to authenticated
+using (
+  bucket_id='program-planning-forms'
+  and (
+    public.current_profile_role()='admin'
+    or (
+      public.current_profile_role()='council_sgan'
+      and (storage.foldername(name))[1]=public.current_council_id()::text
+    )
+  )
+);
