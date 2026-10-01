@@ -459,3 +459,29 @@ using (
     )
   )
 );
+
+alter table chapter_visits add column if not exists counterpart_id uuid references counterparts(id) on delete set null;
+
+create table if not exists leader_notes (
+  id uuid primary key default gen_random_uuid(),
+  council_id uuid not null references councils(id) on delete cascade,
+  owner_profile_id uuid not null references profiles(id) on delete cascade,
+  body text not null default '',
+  tagged_counterpart_ids uuid[] not null default '{}'::uuid[],
+  shared_counterpart_ids uuid[] not null default '{}'::uuid[],
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table leader_notes enable row level security;
+create policy "owners or explicitly shared counterparts read leader notes" on leader_notes for select to authenticated
+using (
+  owner_profile_id=auth.uid()
+  or exists (
+    select 1 from counterparts c
+    where c.linked_profile_id=auth.uid()
+      and c.id=any(shared_counterpart_ids)
+  )
+);
+create policy "owners insert leader notes" on leader_notes for insert to authenticated with check (owner_profile_id=auth.uid());
+create policy "owners update leader notes" on leader_notes for update to authenticated using (owner_profile_id=auth.uid()) with check (owner_profile_id=auth.uid());
+create policy "owners delete leader notes" on leader_notes for delete to authenticated using (owner_profile_id=auth.uid());
