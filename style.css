@@ -109,3 +109,8 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.glow{position:f
 .program-management-actions{display:flex;justify-content:flex-end;gap:7px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.06)}.program-management-actions .danger-btn{font-size:10px}
 .program-hidden{margin-top:15px;padding:16px 18px;border-radius:18px;background:rgba(255,255,255,.022);border:1px dashed rgba(255,255,255,.09)}.program-hidden-head h3{margin:4px 0 10px}.program-hidden-list{display:grid;gap:7px}.program-hidden-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 11px;border-radius:11px;background:rgba(255,255,255,.025)}.program-hidden-row strong,.program-hidden-row span{display:block}.program-hidden-row strong{font-size:11px}.program-hidden-row span{font-size:8px;color:var(--muted);margin-top:2px}
 @media(max-width:600px){.program-management-actions>*{flex:1}.program-feedback-box.premium{grid-template-columns:1fr}.program-hidden-row{align-items:flex-start;flex-direction:column}}
+
+.task-delete{width:26px;height:26px;min-width:26px;border-radius:8px;border:1px solid rgba(255,127,159,.14);background:rgba(255,127,159,.06);color:#ffb3c6;font-size:16px;line-height:1;display:grid;place-items:center;padding:0;opacity:.72;transition:.16s ease}
+.task-delete:hover{opacity:1;background:rgba(255,127,159,.12);border-color:rgba(255,127,159,.26);transform:scale(1.04)}
+.check-row{grid-template-columns:auto minmax(0,1fr) auto}
+.workspace-task .task-delete{margin-left:auto}
