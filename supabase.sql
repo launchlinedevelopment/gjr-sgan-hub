@@ -70,6 +70,7 @@ create table if not exists meetings (
   contact_type text not null default 'none' check (contact_type in ('none','counterpart','gjr_staff')),
   contact_name text default '',
   notes text not null default '',
+  cancelled_dates date[] not null default '{}'::date[],
   visible_regionwide boolean not null default false,
   created_at timestamptz not null default now()
 );
