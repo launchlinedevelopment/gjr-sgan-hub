@@ -114,3 +114,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.glow{position:f
 .task-delete:hover{opacity:1;background:rgba(255,127,159,.12);border-color:rgba(255,127,159,.26);transform:scale(1.04)}
 .check-row{grid-template-columns:auto minmax(0,1fr) auto}
 .workspace-task .task-delete{margin-left:auto}
+
+.person-actions.premium .deleteCounterpart{margin-left:auto}
+.deleteCounterpart{white-space:nowrap}
+@media(max-width:600px){.person-actions.premium .deleteCounterpart{margin-left:0}}
