@@ -271,8 +271,27 @@ using (
   )
 )
 with check (owner_profile_id=auth.uid() or assigned_by=auth.uid());
-create policy "delete own check templates" on check_templates for delete to authenticated
-using (owner_profile_id=auth.uid());
+create policy "delete own or managed counterpart check templates" on check_templates for delete to authenticated
+using (
+  owner_profile_id=auth.uid()
+  or (
+    public.current_profile_role()='council_sgan'
+    and exists (
+      select 1 from profiles target
+      where target.id=owner_profile_id
+        and target.role='counterpart'
+        and target.council_id=public.current_council_id()
+    )
+  )
+  or (
+    public.current_profile_role()='admin'
+    and exists (
+      select 1 from profiles target
+      where target.id=owner_profile_id
+        and target.role='counterpart'
+    )
+  )
+);
 
 create policy "read own or managed counterpart completions" on check_completions for select to authenticated
 using (
