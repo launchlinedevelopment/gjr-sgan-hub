@@ -441,7 +441,7 @@ function wireView(){
   const vf=document.getElementById('visitForm');if(vf)vf.onsubmit=addVisit;
   const bnf=document.getElementById('bigNoteForm');if(bnf)bnf.onsubmit=saveBigNote;
   document.querySelectorAll('.shareLeaderNote').forEach(function(btn){btn.onclick=toggleLeaderNoteShare});
-  document.querySelectorAll('.deleteLeaderNote').forEach(function(btn){btn.onclick=deleteLeaderNote};
+  document.querySelectorAll('.deleteLeaderNote').forEach(function(btn){btn.onclick=deleteLeaderNote});
   const at=document.getElementById('addTaskBtn');if(at)at.onclick=addPersonalTask;
   const of=document.getElementById('oneForm');if(of)of.onsubmit=requestOne;
   document.querySelectorAll('.reqAction').forEach(function(btn){btn.onclick=async function(){await sb.from('one_on_one_requests').update({status:btn.dataset.status}).eq('id',btn.dataset.id);await loadAll();renderShell()}});
