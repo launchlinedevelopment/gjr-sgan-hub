@@ -268,8 +268,8 @@ function counterpartCard(c){
   '<div class="person-fields premium"><label>Last check-in<input class="cpField" data-id="'+c.id+'" data-field="last_check_in" type="date" value="'+(c.last_check_in||'')+'"></label><label>Next follow-up<input class="cpField" data-id="'+c.id+'" data-field="next_follow_up" type="date" value="'+(c.next_follow_up||'')+'"></label></div>'+
   '<label class="note-label premium">CRM notes<textarea class="cpField" data-id="'+c.id+'" data-field="notes" rows="2" placeholder="Add context about this counterpart...">'+esc(c.notes||'')+'</textarea></label>'+
   '<div class="person-actions premium">'+(linked?
-    '<button class="primary openWorkspace" data-id="'+c.id+'">Open workspace →</button><button class="ghost assignTask" data-profile="'+linked.id+'" data-name="'+esc(c.name)+'">+ Assign task</button>':
-    '<button class="primary createCp" data-id="'+c.id+'">Create their account</button>')+'</div></article>';
+    '<button class="primary openWorkspace" data-id="'+c.id+'">Open workspace →</button><button class="ghost assignTask" data-profile="'+linked.id+'" data-name="'+esc(c.name)+'">+ Assign task</button><button class="danger-btn deleteCounterpart" data-id="'+c.id+'" data-name="'+esc(c.name)+'">Delete</button>':
+    '<button class="primary createCp" data-id="'+c.id+'">Create their account</button><button class="danger-btn deleteCounterpart" data-id="'+c.id+'" data-name="'+esc(c.name)+'">Delete</button>')+'</div></article>';
 }
 function counterpartWorkspaceHtml(counterpartId){
   const c=state.counterparts.find(function(x){return x.id===counterpartId});if(!c)return '';
@@ -380,6 +380,7 @@ function wireView(){
   document.querySelectorAll('.deleteTask').forEach(function(btn){btn.onclick=deleteTask});
   document.querySelectorAll('.cpField').forEach(function(el){el.onchange=async function(){const patch={};patch[el.dataset.field]=el.value;await sb.from('counterparts').update(patch).eq('id',el.dataset.id);await loadAll();renderShell()}});
   document.querySelectorAll('.createCp').forEach(function(btn){btn.onclick=function(){createCounterpartAccount(btn.dataset.id)}});
+  document.querySelectorAll('.deleteCounterpart').forEach(function(btn){btn.onclick=deleteCounterpart});
   document.querySelectorAll('.assignTask').forEach(function(btn){btn.onclick=function(){assignCounterpartTask(btn.dataset.profile,btn.dataset.name)}});
   document.querySelectorAll('.openWorkspace').forEach(function(btn){btn.onclick=function(){openCounterpartWorkspace(btn.dataset.id)}});
   document.querySelectorAll('[data-thread]').forEach(function(btn){btn.onclick=function(){activeThread=btn.dataset.thread;renderShell()}});
@@ -406,6 +407,19 @@ function wireView(){
   document.querySelectorAll('.openMeeting').forEach(function(btn){btn.onclick=function(){openMeetingModal(btn.dataset.meeting,btn.dataset.date)}});
 }
 
+async function deleteCounterpart(e){
+  e.preventDefault();
+  e.stopPropagation();
+  const btn=e.currentTarget,id=btn.dataset.id,name=btn.dataset.name||'this counterpart';
+  const cp=state.counterparts.find(function(x){return x.id===id});if(!cp)return;
+  const hasAccount=!!cp.linked_profile_id;
+  const msg='Delete '+name+' from your counterparts?'+(hasAccount?' Their login account will stay active; this only removes them from your People list.':'');
+  if(!confirm(msg))return;
+  const r=await sb.from('counterparts').delete().eq('id',id);
+  if(r.error){alert('Could not delete counterpart: '+r.error.message);return;}
+  await loadAll();
+  renderShell();
+}
 async function deleteTask(e){
   e.preventDefault();
   e.stopPropagation();
