@@ -133,12 +133,17 @@ function checklistHtml(ts){
   }).join('')+'</div>';
 }
 
-function occurrence(m,date){
-  const key=iso(date);
-  if((m.cancelled_dates||[]).includes(key))return false;
+function scheduledOccurrence(m,date){
   const start=new Date(m.start_date+'T12:00:00'),target=new Date(date.getFullYear(),date.getMonth(),date.getDate(),12);
   if(target<start)return false;const diff=Math.round((target-start)/86400000);
   return m.recurrence==='none'?diff===0:m.recurrence==='weekly'?diff%7===0:diff%14===0;
+}
+function occurrence(m,date){
+  const key=iso(date);
+  return scheduledOccurrence(m,date)&&!(m.cancelled_dates||[]).includes(key);
+}
+function cancelledOccurrence(m,date){
+  return scheduledOccurrence(m,date)&&(m.cancelled_dates||[]).includes(iso(date));
 }
 function nextOccurrences(days){
   const out=[],today=new Date();
@@ -177,10 +182,12 @@ function scheduleBaseDate(){
 function scheduleHtml(){
   const base=scheduleBaseDate(),week=weekDays(base);
   const contacts=state.counterparts.filter(function(c){return c.council_id===me.council_id});
-  const occ=[];
+  const occ=[],cancelled=[];
   week.forEach(function(d){
     state.meetings.forEach(function(m){
-      if((m.owner_profile_id===me.id||m.attendee_profile_id===me.id)&&occurrence(m,d))occ.push({meeting:m,date:d});
+      if(m.owner_profile_id!==me.id&&m.attendee_profile_id!==me.id)return;
+      if(occurrence(m,d))occ.push({meeting:m,date:d});
+      else if(cancelledOccurrence(m,d))cancelled.push({meeting:m,date:d});
     });
   });
   const label=niceDate(iso(week[0]))+' – '+niceDate(iso(week[6]));
@@ -188,16 +195,23 @@ function scheduleHtml(){
   const thisWeekCount=occ.length;
   const onlineCount=occ.filter(function(x){return x.meeting.mode==='Online'}).length;
   const inPersonCount=occ.filter(function(x){return x.meeting.mode==='In-Person'}).length;
+  const cancelledCount=cancelled.length;
   const next=occ.slice().sort(function(a,b){return iso(a.date).localeCompare(iso(b.date))||String(a.meeting.start_time).localeCompare(String(b.meeting.start_time))}).find(function(x){return iso(x.date)>=todayKey});
-  let html='<section class="schedule-hero"><div><div class="eyebrow">YOUR SCHEDULE</div><h1>Own the week.<br><span>See everything.</span></h1><p>'+label+'</p></div><div class="schedule-hero-stats"><div><strong>'+thisWeekCount+'</strong><span>Meetings</span></div><div><strong>'+onlineCount+'</strong><span>Online</span></div><div><strong>'+inPersonCount+'</strong><span>In person</span></div></div></section>'+
+  let html='<section class="schedule-hero"><div><div class="eyebrow">YOUR SCHEDULE</div><h1>Own the week.<br><span>See everything.</span></h1><p>'+label+'</p></div><div class="schedule-hero-stats four"><div><strong>'+thisWeekCount+'</strong><span>Active</span></div><div><strong>'+onlineCount+'</strong><span>Online</span></div><div><strong>'+inPersonCount+'</strong><span>In person</span></div><div class="cancelled-stat"><strong>'+cancelledCount+'</strong><span>Cancelled</span></div></div></section>'+
   '<section class="schedule-shell premium"><div class="schedule-toolbar premium"><div><div class="eyebrow">WEEK VIEW</div><h2>'+label+'</h2>'+(next?'<p>Next up: <strong>'+esc(next.meeting.title)+'</strong> · '+niceDate(iso(next.date))+' · '+meetingTimeText(next.meeting)+'</p>':'<p>No more meetings this week.</p>')+'</div><div class="schedule-nav premium"><button class="ghost" id="prevWeekBtn">← Previous</button><button class="ghost" id="todayWeekBtn">Today</button><button class="ghost" id="nextWeekBtn">Next →</button></div></div><div class="schedule-board premium">'+week.map(function(d){
     const list=occ.filter(function(x){return iso(x.date)===iso(d)});
+    const cancelledList=cancelled.filter(function(x){return iso(x.date)===iso(d)});
     const isToday=iso(d)===todayKey;
-    return '<div class="day-col premium '+(isToday?'today':'')+'"><div class="day-head"><div><span>'+dayName(d)+'</span><strong>'+d.getDate()+'</strong></div><small>'+d.toLocaleDateString('en-US',{month:'short'})+'</small></div><div class="day-events">'+(list.length?list.map(function(x){
+    const activeHtml=list.map(function(x){
       const m=x.meeting,contact=meetingContactName(m);
       const modeClass=m.mode==='In-Person'?'inperson':m.mode==='Online'?'online':'tbd';
       return '<button class="meeting-mini premium openMeeting '+modeClass+'" data-meeting="'+m.id+'" data-date="'+iso(x.date)+'"><div class="meeting-mini-top"><span class="meeting-time">'+meetingTimeText(m)+'</span><span class="meeting-mode '+modeClass+'">'+esc(m.mode)+'</span></div><strong>'+esc(m.title)+'</strong><span class="meeting-contact">'+(contact?'with '+esc(contact):'No specific contact')+'</span><span class="meeting-open">View details →</span></button>';
-    }).join(''):'<div class="day-empty"><span>+</span><small>Open day</small></div>')+'</div></div>';
+    }).join('');
+    const cancelledHtml=cancelledList.map(function(x){
+      const m=x.meeting,contact=meetingContactName(m);
+      return '<div class="meeting-mini premium cancelled"><div class="meeting-mini-top"><span class="meeting-time">'+meetingTimeText(m)+'</span><span class="meeting-mode cancelled">Cancelled</span></div><strong>'+esc(m.title)+'</strong><span class="meeting-contact">'+(contact?'with '+esc(contact):'No specific contact')+'</span><span class="meeting-cancelled-note">This meeting was cancelled</span></div>';
+    }).join('');
+    return '<div class="day-col premium '+(isToday?'today':'')+'"><div class="day-head"><div><span>'+dayName(d)+'</span><strong>'+d.getDate()+'</strong></div><small>'+d.toLocaleDateString('en-US',{month:'short'})+'</small></div><div class="day-events">'+(activeHtml+cancelledHtml||'<div class="day-empty"><span>+</span><small>Open day</small></div>')+'</div></div>';
   }).join('')+'</div></section>';
   if(me.role!=='counterpart'){
     html+='<section class="schedule-create-card"><div class="schedule-create-head"><div><div class="eyebrow">ADD TO CALENDAR</div><h2>Create a meeting</h2><p>Build it once. Recurring meetings stay on your schedule automatically.</p></div><div class="schedule-create-icon">＋</div></div><form id="meetingForm" class="schedule-form"><label class="wide">Meeting name<input id="mTitle" placeholder="e.g. Council S\'ganim Call" required></label><label class="wide">Who are you meeting with?<select id="mCounterpart"><option value="">No specific contact</option><option value="__GJR_STAFF__">GJR Staff</option>'+contacts.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+' — '+esc(c.chapter)+'</option>'}).join('')+'</select></label><label>Type<select id="mMode"><option>Online</option><option>In-Person</option></select></label><label>Repeats<select id="mRepeat"><option value="none">One time</option><option value="weekly">Weekly</option><option value="biweekly">Every other week</option></select></label><label>Date<input id="mDate" type="date" required></label><label>Starts<input id="mStart" type="time" required></label><label>Ends<input id="mEnd" type="time"></label><label>Location<input id="mLocation" placeholder="Optional"></label><label class="wide">Meeting link<input id="mUrl" type="url" placeholder="https://..."></label><button class="primary schedule-create-btn">Add to schedule →</button></form></section>';
@@ -599,7 +613,7 @@ function openMeetingModal(meetingId,date){
       dates.push(date);
       r=await sb.from('meetings').update({cancelled_dates:dates}).eq('id',m.id);
     }else{
-      r=await sb.from('meetings').delete().eq('id',m.id);
+      r=await sb.from('meetings').update({cancelled_dates:[date]}).eq('id',m.id);
     }
     if(r.error){alert(r.error.message);return;}
     await loadAll();
