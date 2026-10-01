@@ -115,7 +115,7 @@ function isDone(t){const p=periodKey(t);return state.completions.some(function(c
 function checklistHtml(ts){
   if(!ts.length)return '<div class="empty">No active checklist items.</div>';
   const groups={};ts.forEach(function(t){(groups[t.group_name]||(groups[t.group_name]=[])).push(t)});
-  return Object.keys(groups).map(function(g){return '<div class="check-group"><div class="check-title">'+esc(g)+'</div>'+groups[g].map(function(t){const d=isDone(t);return '<label class="check-row '+(d?'done':'')+'"><input type="checkbox" class="checkToggle" data-id="'+t.id+'" '+(d?'checked':'')+'><div><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned by your Council S\'gan · ':'')+esc(t.cadence)+(t.due_date?' · due '+niceDate(t.due_date):'')+(t.until_date?' · through '+niceDate(t.until_date):'')+'</span></div></label>'}).join('')+'</div>'}).join('');
+  return Object.keys(groups).map(function(g){return '<div class="check-group"><div class="check-title">'+esc(g)+'</div>'+groups[g].map(function(t){const d=isDone(t);return '<div class="check-row '+(d?'done':'')+'"><input type="checkbox" class="checkToggle" data-id="'+t.id+'" '+(d?'checked':'')+'><div><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned by your Council S\'gan · ':'')+esc(t.cadence)+(t.due_date?' · due '+niceDate(t.due_date):'')+(t.until_date?' · through '+niceDate(t.until_date):'')+'</span></div><button class="task-delete deleteTask" data-id="'+t.id+'" title="Delete task">×</button></div>}).join('')+'</div>'}).join('');
 }
 
 function occurrence(m,date){
@@ -282,7 +282,7 @@ function counterpartWorkspaceHtml(counterpartId){
     const p=periodKey(t);
     const done=state.completions.some(function(x){return x.template_id===t.id&&x.profile_id===linked.id&&x.period_key===p});
     const overdue=!done&&t.due_date&&t.due_date<iso(new Date());
-    return '<div class="workspace-task '+(done?'done ':'')+(overdue?'overdue':'')+'"><div class="workspace-check">'+(done?'✓':'')+'</div><div class="workspace-task-copy"><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned task':'Personal task')+(t.due_date?' · Due '+niceDate(t.due_date):' · No deadline')+'</span></div><div class="workspace-task-state '+(done?'done':overdue?'overdue':'open')+'">'+(done?'Completed':overdue?'Overdue':'Open')+'</div></div>';
+    return '<div class="workspace-task '+(done?'done ':'')+(overdue?'overdue':'')+'"><div class="workspace-check">'+(done?'✓':'')+'</div><div class="workspace-task-copy"><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned task':'Personal task')+(t.due_date?' · Due '+niceDate(t.due_date):' · No deadline')+'</span></div><div class="workspace-task-state '+(done?'done':overdue?'overdue':'open')+'">'+(done?'Completed':overdue?'Overdue':'Open')+'</div><button class="task-delete deleteTask" data-id="'+t.id+'" data-workspace="'+counterpartId+'" title="Delete task">×</button></div>';
   }).join(''):'<div class="workspace-empty">No tasks on their checklist yet.</div>';
   const calendarHtml=upcoming.length?upcoming.map(function(x){
     const m=x.meeting;
@@ -377,6 +377,7 @@ function counterpartQuickHtml(){
 
 function wireView(){
   document.querySelectorAll('.checkToggle').forEach(function(cb){cb.onchange=async function(){const t=state.templates.find(function(x){return x.id===cb.dataset.id});const p=periodKey(t);if(cb.checked){await sb.from('check_completions').insert({template_id:t.id,profile_id:me.id,period_key:p})}else{await sb.from('check_completions').delete().eq('template_id',t.id).eq('profile_id',me.id).eq('period_key',p)}await loadAll();renderShell()}});
+  document.querySelectorAll('.deleteTask').forEach(function(btn){btn.onclick=deleteTask});
   document.querySelectorAll('.cpField').forEach(function(el){el.onchange=async function(){const patch={};patch[el.dataset.field]=el.value;await sb.from('counterparts').update(patch).eq('id',el.dataset.id);await loadAll();renderShell()}});
   document.querySelectorAll('.createCp').forEach(function(btn){btn.onclick=function(){createCounterpartAccount(btn.dataset.id)}});
   document.querySelectorAll('.assignTask').forEach(function(btn){btn.onclick=function(){assignCounterpartTask(btn.dataset.profile,btn.dataset.name)}});
@@ -405,6 +406,19 @@ function wireView(){
   document.querySelectorAll('.openMeeting').forEach(function(btn){btn.onclick=function(){openMeetingModal(btn.dataset.meeting,btn.dataset.date)}});
 }
 
+async function deleteTask(e){
+  e.preventDefault();
+  e.stopPropagation();
+  const btn=e.currentTarget,id=btn.dataset.id;
+  const task=state.templates.find(function(t){return t.id===id});if(!task)return;
+  if(!confirm('Delete "'+task.title+'" permanently?'))return;
+  const r=await sb.from('check_templates').delete().eq('id',id);
+  if(r.error){alert(r.error.message);return;}
+  const workspaceId=btn.dataset.workspace||'';
+  await loadAll();
+  if(workspaceId&&document.getElementById('counterpartWorkspaceHost'))openCounterpartWorkspace(workspaceId);
+  else renderShell();
+}
 async function assignCounterpartTask(profileId,name){
   const title=prompt('Task for '+name+':');
   if(!title||!title.trim())return false;
