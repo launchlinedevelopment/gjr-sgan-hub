@@ -64,12 +64,13 @@ async function loadAll(){
     sb.from('one_on_one_requests').select('*').order('requested_date').order('requested_start'),
     sb.from('messages').select('*').or('sender_id.eq.'+me.id+',recipient_id.eq.'+me.id).order('created_at'),
     sb.from('program_planning_forms').select('*').order('created_at',{ascending:false}),
-    sb.from('meeting_occurrence_notes').select('*').order('occurrence_date',{ascending:false})
+    sb.from('meeting_occurrence_notes').select('*').order('occurrence_date',{ascending:false}),
+    sb.from('leader_notes').select('*').order('updated_at',{ascending:false})
   ];
   const out=await Promise.all(queries);
   state.profiles=out[0].data||[];state.councils=out[1].data||[];state.counterparts=out[2].data||[];
   state.templates=out[3].data||[];state.completions=out[4].data||[];state.meetings=out[5].data||[];
-  state.visits=out[6].data||[];state.requests=out[7].data||[];state.messages=out[8].data||[];state.programs=out[9].data||[];state.meetingNotes=out[10].data||[];
+  state.visits=out[6].data||[];state.requests=out[7].data||[];state.messages=out[8].data||[];state.programs=out[9].data||[];state.meetingNotes=out[10].data||[];state.leaderNotes=out[11].data||[];
 }
 
 function renderShell(){
@@ -227,20 +228,28 @@ function meetingNotesHtml(){
     '</article>';
   }).join('')+'</div></section>';
 }
+function noteTaggedNames(note){
+  return (note.tagged_counterpart_ids||[]).map(function(id){const c=state.counterparts.find(function(x){return x.id===id});return c?c.name:null}).filter(Boolean);
+}
+function sharedWithCounterpart(note,id){return (note.shared_counterpart_ids||[]).includes(id)}
+function privateNotesHtml(){
+  const mine=(state.leaderNotes||[]).filter(function(n){return n.owner_profile_id===me.id});
+  const cps=state.counterparts.filter(function(c){return me.role==='admin'||c.council_id===me.council_id});
+  if(me.role==='counterpart'){
+    const shared=(state.leaderNotes||[]).filter(function(n){return (n.shared_counterpart_ids||[]).some(function(id){const c=state.counterparts.find(function(x){return x.id===id});return c&&c.linked_profile_id===me.id})});
+    if(!shared.length)return '';
+    return '<section class="shared-notes-panel"><div class="eyebrow">SHARED WITH YOU</div><h2>Notes from your Council S\'gan</h2><div class="private-note-list">'+shared.map(function(n){return '<article class="private-note-card shared"><div class="private-note-top"><span>Shared note</span><small>'+new Date(n.updated_at).toLocaleDateString()+'</small></div><p>'+esc(n.body)+'</p></article>'}).join('')+'</div></section>';
+  }
+  return '<section class="private-notes-panel"><div class="private-notes-head"><div><div class="eyebrow">PRIVATE NOTES VAULT</div><h2>One place for the stuff you need later.</h2><p>Tag counterparts so the note shows up when you are preparing for their calls. It stays private until you explicitly share it.</p></div><div class="private-lock">PRIVATE</div></div>'+
+  '<form id="bigNoteForm" class="big-note-form"><textarea id="bigNoteBody" rows="7" placeholder="Write one big note here..."></textarea><div class="tag-picker"><div class="tag-picker-head"><strong>Tag counterparts</strong><span>Tags are private. Sharing is separate.</span></div><div class="tag-chip-grid">'+cps.map(function(c){return '<label class="tag-chip"><input type="checkbox" class="bigNoteTag" value="'+c.id+'"><span>'+esc(c.name)+'</span></label>'}).join('')+'</div></div><button class="primary">Save private note →</button></form>'+
+  '<div class="private-note-list">'+(mine.length?mine.map(function(n){const tagged=noteTaggedNames(n);return '<article class="private-note-card"><div class="private-note-top"><div><span>PRIVATE NOTE</span><small>Updated '+new Date(n.updated_at).toLocaleDateString()+'</small></div><button class="task-delete deleteLeaderNote" data-id="'+n.id+'">×</button></div><p>'+esc(n.body)+'</p><div class="private-note-tags">'+(tagged.length?tagged.map(function(name){return '<span>'+esc(name)+'</span>'}).join(''):'<span>No tags</span>')+'</div><div class="private-note-share">'+(n.tagged_counterpart_ids||[]).map(function(id){const c=state.counterparts.find(function(x){return x.id===id});if(!c)return '';const shared=sharedWithCounterpart(n,id);return '<button class="'+(shared?'shared':'')+' shareLeaderNote" data-note="'+n.id+'" data-counterpart="'+id+'">'+(shared?'Shared with ':'Share with ')+esc(c.name)+'</button>'}).join('')+'</div></article>'}).join(''):'<div class="task-empty"><div class="task-empty-icon">✎</div><strong>No private notes yet</strong><span>Write your first one above.</span></div>')+'</div></section>';
+}
 function notesHtml(){
   const notes=(state.meetingNotes||[]).slice().sort(function(a,b){return String(b.occurrence_date).localeCompare(String(a.occurrence_date))});
-  const visible=notes.filter(function(n){
-    const m=state.meetings.find(function(x){return x.id===n.meeting_id});
-    return !!m&&(m.owner_profile_id===me.id||m.attendee_profile_id===me.id);
-  });
-  let html='<section class="hero"><div class="hero-copy"><div class="eyebrow">MEETING NOTES</div><h1>Your notes.<br><span>All in one place.</span></h1><p>Jump back into notes from past meetings without digging through your schedule.</p></div></section>';
+  const visible=notes.filter(function(n){const m=state.meetings.find(function(x){return x.id===n.meeting_id});return !!m&&(m.owner_profile_id===me.id||m.attendee_profile_id===me.id)});
+  let html='<section class="notes-hero"><div><div class="eyebrow">NOTES</div><h1>Remember everything.<br><span>Share only what you choose.</span></h1><p>Meeting notes, private cross-call context, and counterpart tags all live here.</p></div></section>'+privateNotesHtml();
   if(!visible.length)return html+'<section class="card" style="margin-top:15px"><div class="empty">No meeting notes yet. Open a meeting from Schedule to add your first note.</div></section><div id="meetingModalHost"></div>';
-  html+='<section class="card notes-library" style="margin-top:15px"><div class="card-head"><div><div class="eyebrow">NOTES LIBRARY</div><h2>'+visible.length+' saved note'+(visible.length===1?'':'s')+'</h2></div></div><div class="notes-grid">'+visible.map(function(n){
-    const m=state.meetings.find(function(x){return x.id===n.meeting_id});if(!m)return '';
-    const contact=meetingContactName(m);
-    const preview=(n.notes||'').trim();
-    return '<button class="note-card openMeeting" data-meeting="'+m.id+'" data-date="'+n.occurrence_date+'"><div class="note-card-top"><div><span class="note-date">'+niceDate(n.occurrence_date)+'</span><strong>'+esc(m.title)+'</strong></div><span class="note-arrow">→</span></div><div class="note-meta">'+meetingTimeText(m)+(contact?' · with '+esc(contact):'')+'</div><p>'+esc(preview||'No notes added yet.')+'</p><span class="note-open">Open meeting details</span></button>';
-  }).join('')+'</div></section><div id="meetingModalHost"></div>';
+  html+='<section class="card notes-library" style="margin-top:15px"><div class="card-head"><div><div class="eyebrow">MEETING NOTES</div><h2>'+visible.length+' saved note'+(visible.length===1?'':'s')+'</h2></div></div><div class="notes-grid">'+visible.map(function(n){const m=state.meetings.find(function(x){return x.id===n.meeting_id});if(!m)return '';const contact=meetingContactName(m),preview=(n.notes||'').trim();return '<button class="note-card openMeeting" data-meeting="'+m.id+'" data-date="'+n.occurrence_date+'"><div class="note-card-top"><div><span class="note-date">'+niceDate(n.occurrence_date)+'</span><strong>'+esc(m.title)+'</strong></div><span class="note-arrow">→</span></div><div class="note-meta">'+meetingTimeText(m)+(contact?' · with '+esc(contact):'')+'</div><p>'+esc(preview||'No notes added yet.')+'</p><span class="note-open">Open meeting details</span></button>'}).join('')+'</div></section><div id="meetingModalHost"></div>';
   return html;
 }
 
@@ -342,7 +351,10 @@ function closeCounterpartWorkspace(){const host=document.getElementById('counter
 
 function visitsHtml(){
   const list=state.visits.filter(function(x){return x.created_by===me.id});
-  return '<section class="card"><div class="card-head"><div><div class="eyebrow">CHAPTER VISITS</div><h2>Visit Tracker</h2></div></div><form id="visitForm" class="form-grid"><label>Chapter<input id="vChapter" required></label><label>Date<input id="vDate" type="date" required></label><label class="wide">What went well?<input id="vGood"></label><label class="wide">What do they need help with?<input id="vHelp"></label><label class="wide">Follow-up / next step<input id="vNext"></label><button class="primary">Log visit</button></form></section><section class="card" style="margin-top:15px"><div class="visit-grid">'+(list.length?list.map(function(x){return '<article class="visit-card"><div class="eyebrow">'+niceDate(x.visit_date)+'</div><h3>'+esc(x.chapter)+'</h3><p><b>Went well:</b> '+esc(x.went_well||'—')+'</p><p><b>Needs help:</b> '+esc(x.needs_help||'—')+'</p><p><b>Next:</b> '+esc(x.follow_up||'—')+'</p></article>'}).join(''):'<div class="empty">No visits logged yet.</div>')+'</div></section>';
+  const cps=state.counterparts.filter(function(c){return me.role==='admin'||c.council_id===me.council_id});
+  return '<section class="visits-hero"><div><div class="eyebrow">CHAPTER VISITS</div><h1>Capture the visit.<br><span>Keep the context.</span></h1><p>Every visit automatically feeds the important details into that counterpart\'s CRM notes so you have them ready on future calls.</p></div></section>'+
+  '<section class="visit-entry-card"><div class="visit-entry-head"><div><div class="eyebrow">LOG A VISIT</div><h2>What happened?</h2></div><div class="visit-entry-icon">↗</div></div><form id="visitForm" class="visit-form"><label class="wide">Counterpart<select id="vCounterpart" required><option value="">Choose counterpart</option>'+cps.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+' — '+esc(c.chapter)+'</option>'}).join('')+'</select></label><label>Date<input id="vDate" type="date" required></label><label class="wide">What went well?<textarea id="vGood" rows="3" placeholder="Wins, energy, what was working..."></textarea></label><label class="wide">What do they need help with?<textarea id="vHelp" rows="3" placeholder="Roadblocks, support needed, concerns..."></textarea></label><label class="wide">Follow-up / next step<textarea id="vNext" rows="3" placeholder="What should happen next?"></textarea></label><button class="primary visit-save-btn">Save visit + add to counterpart notes →</button></form></section>'+
+  '<section class="visit-history"><div class="visit-history-head"><div><div class="eyebrow">VISIT HISTORY</div><h2>'+list.length+' logged visit'+(list.length===1?'':'s')+'</h2></div></div><div class="visit-grid premium">'+(list.length?list.map(function(x){const cp=x.counterpart_id?state.counterparts.find(function(c){return c.id===x.counterpart_id}):null;return '<article class="visit-card premium"><div class="visit-card-date">'+niceDate(x.visit_date)+'</div><h3>'+esc(cp?cp.name:x.chapter)+'</h3><span class="visit-card-chapter">'+esc(cp?cp.chapter:x.chapter)+'</span><div class="visit-note-block"><span>Went well</span><p>'+esc(x.went_well||'—')+'</p></div><div class="visit-note-block"><span>Needs help</span><p>'+esc(x.needs_help||'—')+'</p></div><div class="visit-note-block"><span>Next step</span><p>'+esc(x.follow_up||'—')+'</p></div></article>'}).join(''):'<div class="empty">No visits logged yet.</div>')+'</div></section>';
 }
 
 function adminHtml(){
@@ -427,6 +439,9 @@ function wireView(){
   const todayWeek=document.getElementById('todayWeekBtn');if(todayWeek)todayWeek.onclick=function(){scheduleWeekOffset=0;renderShell()};
   const nextWeek=document.getElementById('nextWeekBtn');if(nextWeek)nextWeek.onclick=function(){scheduleWeekOffset++;renderShell()};
   const vf=document.getElementById('visitForm');if(vf)vf.onsubmit=addVisit;
+  const bnf=document.getElementById('bigNoteForm');if(bnf)bnf.onsubmit=saveBigNote;
+  document.querySelectorAll('.shareLeaderNote').forEach(function(btn){btn.onclick=toggleLeaderNoteShare});
+  document.querySelectorAll('.deleteLeaderNote').forEach(function(btn){btn.onclick=deleteLeaderNote};
   const at=document.getElementById('addTaskBtn');if(at)at.onclick=addPersonalTask;
   const of=document.getElementById('oneForm');if(of)of.onsubmit=requestOne;
   document.querySelectorAll('.reqAction').forEach(function(btn){btn.onclick=async function(){await sb.from('one_on_one_requests').update({status:btn.dataset.status}).eq('id',btn.dataset.id);await loadAll();renderShell()}});
@@ -548,6 +563,8 @@ function openMeetingModal(meetingId,date){
   const m=state.meetings.find(function(x){return x.id===meetingId});if(!m)return;
   const host=document.getElementById('meetingModalHost');if(!host)return;
   const n=occurrenceNote(meetingId,date),contact=meetingContactName(m),own=m.owner_profile_id===me.id;
+  const relatedCounterpartId=m.counterpart_id||null;
+  const relatedPrivateNotes=relatedCounterpartId?(state.leaderNotes||[]).filter(function(x){return x.owner_profile_id===me.id&&(x.tagged_counterpart_ids||[]).includes(relatedCounterpartId)}):[];
   const recurrence=m.recurrence==='none'?'One time':m.recurrence==='weekly'?'Weekly':'Every other week';
   host.innerHTML='<div class="meeting-modal-backdrop" id="meetingModalBackdrop"><section class="meeting-modal"><div class="meeting-modal-head"><div><div class="eyebrow">MEETING DETAILS</div><h2>'+esc(m.title)+'</h2></div><button class="modal-close" id="meetingModalClose">×</button></div><div class="meeting-detail-grid">'+
     '<div class="meeting-detail"><span>Date</span><strong>'+niceDate(date)+'</strong></div>'+
@@ -558,6 +575,7 @@ function openMeetingModal(meetingId,date){
     '<div class="meeting-detail"><span>Location</span><strong>'+esc(m.location||'—')+'</strong></div>'+
   '</div>'+
   (m.url?'<a class="meeting-join" target="_blank" rel="noopener" href="'+esc(m.url)+'">Join meeting ↗</a>':'')+
+  (own&&relatedPrivateNotes.length?'<div class="meeting-private-context"><div class="eyebrow">PRIVATE CONTEXT FOR THIS COUNTERPART</div><h3>Bring this into the call</h3>'+relatedPrivateNotes.map(function(x){return '<div class="meeting-private-note">'+esc(x.body)+'<span>'+(sharedWithCounterpart(x,relatedCounterpartId)?'Shared with counterpart':'Private to you')+'</span></div>'}).join('')+'</div>':'')+
   '<div class="meeting-notes-panel"><div class="eyebrow">MEETING NOTES</div><h3>'+ (own?'Your notes':'Notes from the Council S\'gan') +'</h3>'+
   (own?'<textarea id="modalMeetingNote" rows="7" placeholder="Add notes from this meeting...">'+esc(n?n.notes:'')+'</textarea><button class="primary" id="modalSaveNote">Save notes</button>':
   '<div class="meeting-note-readonly">'+esc(n&&n.notes?n.notes:'No notes have been added yet.')+'</div>')+
@@ -586,7 +604,40 @@ async function saveMeetingNote(e){
   const ok=await saveMeetingNoteValue(meetingId,date,notes);
   if(ok)renderShell();
 }
-async function addVisit(e){e.preventDefault();const row={council_id:me.council_id,chapter:v('vChapter'),visit_date:v('vDate'),went_well:v('vGood'),needs_help:v('vHelp'),follow_up:v('vNext'),created_by:me.id};const r=await sb.from('chapter_visits').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
+async function addVisit(e){
+  e.preventDefault();
+  const cp=state.counterparts.find(function(x){return x.id===v('vCounterpart')});if(!cp){alert('Choose a counterpart.');return;}
+  const row={council_id:me.council_id,counterpart_id:cp.id,chapter:cp.chapter,visit_date:v('vDate'),went_well:v('vGood'),needs_help:v('vHelp'),follow_up:v('vNext'),created_by:me.id};
+  const r=await sb.from('chapter_visits').insert(row);if(r.error){alert(r.error.message);return;}
+  const visitNote='['+niceDate(row.visit_date)+' chapter visit]\nWent well: '+(row.went_well||'—')+'\nNeeds help: '+(row.needs_help||'—')+'\nNext step: '+(row.follow_up||'—');
+  const existing=(cp.notes||'').trim();
+  const u=await sb.from('counterparts').update({notes:(existing?existing+'\n\n':'')+visitNote}).eq('id',cp.id);
+  if(u.error){alert('Visit saved, but CRM note update failed: '+u.error.message);return;}
+  await loadAll();renderShell();
+}
+async function saveBigNote(e){
+  e.preventDefault();
+  const body=v('bigNoteBody');if(!body){alert('Write a note first.');return;}
+  const tags=Array.from(document.querySelectorAll('.bigNoteTag:checked')).map(function(x){return x.value});
+  const r=await sb.from('leader_notes').insert({council_id:me.council_id,owner_profile_id:me.id,body:body,tagged_counterpart_ids:tags,shared_counterpart_ids:[]});
+  if(r.error){alert(r.error.message);return;}
+  await loadAll();renderShell();
+}
+async function toggleLeaderNoteShare(e){
+  const btn=e.currentTarget,note=state.leaderNotes.find(function(x){return x.id===btn.dataset.note});if(!note)return;
+  const id=btn.dataset.counterpart,c=state.counterparts.find(function(x){return x.id===id});if(!c)return;
+  if(!c.linked_profile_id){alert(c.name+' does not have a login account yet, so there is nobody to share this with.');return;}
+  let shared=(note.shared_counterpart_ids||[]).slice();
+  if(shared.includes(id))shared=shared.filter(function(x){return x!==id});else shared.push(id);
+  const r=await sb.from('leader_notes').update({shared_counterpart_ids:shared,updated_at:new Date().toISOString()}).eq('id',note.id);
+  if(r.error){alert(r.error.message);return;}
+  await loadAll();renderShell();
+}
+async function deleteLeaderNote(e){
+  const id=e.currentTarget.dataset.id;if(!confirm('Delete this private note?'))return;
+  const r=await sb.from('leader_notes').delete().eq('id',id);if(r.error){alert(r.error.message);return;}
+  await loadAll();renderShell();
+}
 async function requestOne(e){e.preventDefault();const row={council_id:me.council_id,counterpart_profile_id:me.id,council_sgan_profile_id:v('oneLeader'),requested_date:v('oneDate'),requested_start:v('oneStart'),requested_end:v('oneEnd')||null,notes:v('oneNotes')};const r=await sb.from('one_on_one_requests').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell();alert('1:1 request sent.')}
 async function sendMessage(e){e.preventDefault();const body=v('chatText');if(!body||!activeThread)return;const r=await sb.from('messages').insert({council_id:me.council_id,sender_id:me.id,recipient_id:activeThread,body:body});if(r.error){alert(r.error.message);return;}document.getElementById('chatText').value='';await loadAll();renderShell()}
 
