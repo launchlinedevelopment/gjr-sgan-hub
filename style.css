@@ -177,3 +177,14 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.glow{position:f
 
 .meeting-modal-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}.meeting-modal-actions .primary{flex:1}.meeting-modal-actions .danger-btn{white-space:nowrap}
 @media(max-width:600px){.meeting-modal-actions{flex-direction:column}.meeting-modal-actions>*{width:100%}}
+
+.schedule-hero-stats.four{grid-template-columns:repeat(4,94px)}
+.schedule-hero-stats .cancelled-stat{border-color:rgba(255,127,159,.15);background:rgba(255,127,159,.045)}
+.schedule-hero-stats .cancelled-stat strong{color:#ffc1d1}
+.meeting-mini.premium.cancelled{border-left-color:#ff7f9f;background:linear-gradient(135deg,rgba(255,127,159,.07),rgba(255,255,255,.018));opacity:.72;cursor:default}
+.meeting-mini.premium.cancelled:hover{transform:none;box-shadow:none;border-color:rgba(255,127,159,.15)}
+.meeting-mini.premium.cancelled>strong{text-decoration:line-through;color:#b7bfd0}
+.meeting-mode.cancelled{background:rgba(255,127,159,.09);color:#ffc1d1;border:1px solid rgba(255,127,159,.16)}
+.meeting-cancelled-note{display:block!important;margin-top:8px!important;font-size:7px!important;text-transform:uppercase;letter-spacing:.06em;color:#ff9db5!important;font-weight:900}
+@media(max-width:1000px){.schedule-hero-stats.four{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:650px){.schedule-hero-stats.four{grid-template-columns:1fr 1fr}}
