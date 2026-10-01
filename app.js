@@ -300,6 +300,7 @@ function openCounterpartWorkspace(id){
   const close=document.getElementById('counterpartWorkspaceClose');if(close)close.onclick=closeCounterpartWorkspace;
   const bg=document.getElementById('counterpartWorkspaceBackdrop');if(bg)bg.onclick=function(e){if(e.target.id==='counterpartWorkspaceBackdrop')closeCounterpartWorkspace()};
   document.querySelectorAll('.counterpart-workspace .assignTask').forEach(function(btn){btn.onclick=async function(){await assignCounterpartTask(btn.dataset.profile,btn.dataset.name);openCounterpartWorkspace(id)}});
+  document.querySelectorAll('.counterpart-workspace .deleteTask').forEach(function(btn){btn.onclick=deleteTask});
 }
 function closeCounterpartWorkspace(){const host=document.getElementById('counterpartWorkspaceHost');if(host)host.innerHTML=''}
 
