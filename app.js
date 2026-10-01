@@ -134,6 +134,8 @@ function checklistHtml(ts){
 }
 
 function occurrence(m,date){
+  const key=iso(date);
+  if((m.cancelled_dates||[]).includes(key))return false;
   const start=new Date(m.start_date+'T12:00:00'),target=new Date(date.getFullYear(),date.getMonth(),date.getDate(),12);
   if(target<start)return false;const diff=Math.round((target-start)/86400000);
   return m.recurrence==='none'?diff===0:m.recurrence==='weekly'?diff%7===0:diff%14===0;
@@ -577,7 +579,7 @@ function openMeetingModal(meetingId,date){
   (m.url?'<a class="meeting-join" target="_blank" rel="noopener" href="'+esc(m.url)+'">Join meeting ↗</a>':'')+
   (own&&relatedPrivateNotes.length?'<div class="meeting-private-context"><div class="eyebrow">PRIVATE CONTEXT FOR THIS COUNTERPART</div><h3>Bring this into the call</h3>'+relatedPrivateNotes.map(function(x){return '<div class="meeting-private-note">'+esc(x.body)+'<span>'+(sharedWithCounterpart(x,relatedCounterpartId)?'Shared with counterpart':'Private to you')+'</span></div>'}).join('')+'</div>':'')+
   '<div class="meeting-notes-panel"><div class="eyebrow">MEETING NOTES</div><h3>'+ (own?'Your notes':'Notes from the Council S\'gan') +'</h3>'+
-  (own?'<textarea id="modalMeetingNote" rows="7" placeholder="Add notes from this meeting...">'+esc(n?n.notes:'')+'</textarea><button class="primary" id="modalSaveNote">Save notes</button>':
+  (own?'<textarea id="modalMeetingNote" rows="7" placeholder="Add notes from this meeting...">'+esc(n?n.notes:'')+'</textarea><div class="meeting-modal-actions"><button class="primary" id="modalSaveNote">Save notes</button><button class="danger-btn" id="cancelMeetingBtn">Cancel meeting</button></div>':
   '<div class="meeting-note-readonly">'+esc(n&&n.notes?n.notes:'No notes have been added yet.')+'</div>')+
   '</div></section></div>';
   document.getElementById('meetingModalClose').onclick=closeMeetingModal;
@@ -586,6 +588,23 @@ function openMeetingModal(meetingId,date){
     const notes=document.getElementById('modalMeetingNote').value.trim();
     await saveMeetingNoteValue(meetingId,date,notes);
     openMeetingModal(meetingId,date);
+  };
+  const cancel=document.getElementById('cancelMeetingBtn');if(cancel)cancel.onclick=async function(){
+    const recurring=m.recurrence!=='none';
+    const msg=recurring?'Cancel only this occurrence on '+niceDate(date)+'? Future meetings in the series will stay on your schedule.':'Cancel this meeting?';
+    if(!confirm(msg))return;
+    let r;
+    if(recurring){
+      const dates=(m.cancelled_dates||[]).filter(function(x){return x!==date});
+      dates.push(date);
+      r=await sb.from('meetings').update({cancelled_dates:dates}).eq('id',m.id);
+    }else{
+      r=await sb.from('meetings').delete().eq('id',m.id);
+    }
+    if(r.error){alert(r.error.message);return;}
+    await loadAll();
+    closeMeetingModal();
+    renderShell();
   };
 }
 function closeMeetingModal(){const host=document.getElementById('meetingModalHost');if(host)host.innerHTML=''}
