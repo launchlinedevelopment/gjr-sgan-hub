@@ -115,7 +115,7 @@ function isDone(t){const p=periodKey(t);return state.completions.some(function(c
 function checklistHtml(ts){
   if(!ts.length)return '<div class="empty">No active checklist items.</div>';
   const groups={};ts.forEach(function(t){(groups[t.group_name]||(groups[t.group_name]=[])).push(t)});
-  return Object.keys(groups).map(function(g){return '<div class="check-group"><div class="check-title">'+esc(g)+'</div>'+groups[g].map(function(t){const d=isDone(t);return '<div class="check-row '+(d?'done':'')+'"><input type="checkbox" class="checkToggle" data-id="'+t.id+'" '+(d?'checked':'')+'><div><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned by your Council S\'gan · ':'')+esc(t.cadence)+(t.due_date?' · due '+niceDate(t.due_date):'')+(t.until_date?' · through '+niceDate(t.until_date):'')+'</span></div><button class="task-delete deleteTask" data-id="'+t.id+'" title="Delete task">×</button></div>}).join('')+'</div>'}).join('');
+  return Object.keys(groups).map(function(g){return '<div class="check-group"><div class="check-title">'+esc(g)+'</div>'+groups[g].map(function(t){const d=isDone(t);return '<div class="check-row '+(d?'done':'')+'"><input type="checkbox" class="checkToggle" data-id="'+t.id+'" '+(d?'checked':'')+'><div><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned by your Council S\'gan · ':'')+esc(t.cadence)+(t.due_date?' · due '+niceDate(t.due_date):'')+(t.until_date?' · through '+niceDate(t.until_date):'')+'</span></div><button class="task-delete deleteTask" data-id="'+t.id+'" title="Delete task">×</button></div>'}).join('')+'</div>'}).join('');
 }
 
 function occurrence(m,date){
