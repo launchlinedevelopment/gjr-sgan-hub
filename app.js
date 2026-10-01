@@ -113,9 +113,16 @@ function visibleTemplates(){return state.templates.filter(function(t){return t.o
 function periodKey(t){const d=new Date();if(t.cadence==='once')return 'once';if(t.cadence==='daily')return iso(d);const x=new Date(d);const off=(x.getDay()+6)%7;x.setDate(x.getDate()-off);return iso(x)}
 function isDone(t){const p=periodKey(t);return state.completions.some(function(c){return c.template_id===t.id&&c.period_key===p})}
 function checklistHtml(ts){
-  if(!ts.length)return '<div class="empty">No active checklist items.</div>';
+  if(!ts.length)return '<div class="task-empty"><div class="task-empty-icon">✓</div><strong>Nothing on your plate</strong><span>Your checklist is clear.</span></div>';
   const groups={};ts.forEach(function(t){(groups[t.group_name]||(groups[t.group_name]=[])).push(t)});
-  return Object.keys(groups).map(function(g){return '<div class="check-group"><div class="check-title">'+esc(g)+'</div>'+groups[g].map(function(t){const d=isDone(t);return '<div class="check-row '+(d?'done':'')+'"><input type="checkbox" class="checkToggle" data-id="'+t.id+'" '+(d?'checked':'')+'><div><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned by your Council S\'gan · ':'')+esc(t.cadence)+(t.due_date?' · due '+niceDate(t.due_date):'')+(t.until_date?' · through '+niceDate(t.until_date):'')+'</span></div><button class="task-delete deleteTask" data-id="'+t.id+'" title="Delete task">×</button></div>'}).join('')+'</div>'}).join('');
+  return '<div class="task-board">'+Object.keys(groups).map(function(g){
+    const group=groups[g],doneCount=group.filter(isDone).length;
+    return '<section class="task-group"><div class="task-group-head"><div><div class="task-group-kicker">CHECKLIST</div><h3>'+esc(g)+'</h3></div><div class="task-group-progress"><strong>'+doneCount+'/'+group.length+'</strong><span>done</span></div></div><div class="task-list">'+group.map(function(t){
+      const d=isDone(t),overdue=!d&&t.due_date&&t.due_date<iso(new Date());
+      const due=t.due_date?niceDate(t.due_date):'No deadline';
+      return '<div class="task-card '+(d?'done ':'')+(overdue?'overdue':'')+'"><label class="task-check"><input type="checkbox" class="checkToggle" data-id="'+t.id+'" '+(d?'checked':'')+'><span></span></label><div class="task-card-copy"><strong>'+esc(t.title)+'</strong><div class="task-meta"><span class="task-badge '+(t.assigned_by?'assigned':'personal')+'">'+(t.assigned_by?'Assigned':'Personal')+'</span><span class="task-due '+(overdue?'overdue':'')+'">'+due+'</span></div></div><button class="task-delete deleteTask" data-id="'+t.id+'" title="Delete task">×</button></div>';
+    }).join('')+'</div></section>';
+  }).join('')+'</div>';
 }
 
 function occurrence(m,date){
@@ -282,7 +289,7 @@ function counterpartWorkspaceHtml(counterpartId){
     const p=periodKey(t);
     const done=state.completions.some(function(x){return x.template_id===t.id&&x.profile_id===linked.id&&x.period_key===p});
     const overdue=!done&&t.due_date&&t.due_date<iso(new Date());
-    return '<div class="workspace-task '+(done?'done ':'')+(overdue?'overdue':'')+'"><div class="workspace-check">'+(done?'✓':'')+'</div><div class="workspace-task-copy"><strong>'+esc(t.title)+'</strong><span>'+(t.assigned_by?'Assigned task':'Personal task')+(t.due_date?' · Due '+niceDate(t.due_date):' · No deadline')+'</span></div><div class="workspace-task-state '+(done?'done':overdue?'overdue':'open')+'">'+(done?'Completed':overdue?'Overdue':'Open')+'</div><button class="task-delete deleteTask" data-id="'+t.id+'" data-workspace="'+counterpartId+'" title="Delete task">×</button></div>';
+    return '<div class="workspace-task premium '+(done?'done ':'')+(overdue?'overdue':'')+'"><div class="workspace-check premium">'+(done?'✓':'')+'</div><div class="workspace-task-copy"><strong>'+esc(t.title)+'</strong><div class="workspace-task-meta"><span>'+(t.assigned_by?'Assigned by council':'Personal task')+'</span><span class="'+(overdue?'overdue':'')+'">'+(t.due_date?'Due '+niceDate(t.due_date):'No deadline')+'</span></div></div><div class="workspace-task-state '+(done?'done':overdue?'overdue':'open')+'">'+(done?'Completed':overdue?'Overdue':'Open')+'</div><button class="task-delete deleteTask" data-id="'+t.id+'" data-workspace="'+counterpartId+'" title="Delete task">×</button></div>';
   }).join(''):'<div class="workspace-empty">No tasks on their checklist yet.</div>';
   const calendarHtml=upcoming.length?upcoming.map(function(x){
     const m=x.meeting;
