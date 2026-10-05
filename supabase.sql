@@ -486,3 +486,7 @@ using (
 create policy "owners insert leader notes" on leader_notes for insert to authenticated with check (owner_profile_id=auth.uid());
 create policy "owners update leader notes" on leader_notes for update to authenticated using (owner_profile_id=auth.uid()) with check (owner_profile_id=auth.uid());
 create policy "owners delete leader notes" on leader_notes for delete to authenticated using (owner_profile_id=auth.uid());
+
+alter table profiles
+add column if not exists daily_reminder_enabled boolean not null default false,
+add column if not exists daily_reminder_time time without time zone not null default '17:00:00';
