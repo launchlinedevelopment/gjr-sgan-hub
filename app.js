@@ -22,6 +22,7 @@ async function boot(){
   await loadAll();
   subscribeMessages();
   renderShell();
+  startDailyReminderWatcher();
 }
 
 function renderSetup(){
@@ -34,7 +35,7 @@ function renderLogin(message){
     e.preventDefault();setStatus('Signing in...');
     const r=await sb.auth.signInWithPassword({email:v('loginEmail'),password:v('loginPassword')});
     if(r.error){setStatus(r.error.message);return;}
-    session=r.data.session;await loadMe();await loadAll();subscribeMessages();renderShell();
+    session=r.data.session;await loadMe();await loadAll();subscribeMessages();renderShell();startDailyReminderWatcher();
   };
 }
 function setStatus(t){const x=document.getElementById('loginStatus');if(x)x.textContent=t}
@@ -81,9 +82,78 @@ function renderShell(){
   if(role!=='counterpart'){nav.push(['people','People','◎']);nav.push(['visits','Visits','↗']);}
   if(role==='admin')nav.push(['admin','Admin','⚙']);
   const body=viewHtml(activeView);
-  app.innerHTML='<div class="shell"><header class="topbar"><div class="brand"><div class="logo">GJR</div><div><strong>GJR S\'gan Hub</strong><span>'+esc(council?council.display_name:'Greater Jersey Region')+'</span></div></div><div class="top-actions"><span class="role-pill">'+roleLabel(role)+'</span><span class="pill">'+esc(me.display_name)+'</span><button id="signOutBtn" class="ghost">Sign out</button></div></header><div class="layout"><aside class="sidebar"><nav class="nav">'+nav.map(function(n){return '<button data-view="'+n[0]+'" class="'+(activeView===n[0]?'active':'')+'">'+n[2]+' &nbsp;'+n[1]+'</button>'}).join('')+'</nav><div class="side-card"><div class="eyebrow">YOUR COUNCIL</div><strong style="margin-top:6px">'+esc(council?council.name:'Region')+'</strong><span>'+esc(council?council.display_name:'Greater Jersey Region')+'</span></div></aside><main class="content">'+body+'</main></div></div>';
+  app.innerHTML='<div class="shell"><header class="topbar"><div class="brand"><div class="logo">GJR</div><div><strong>GJR S\'gan Hub</strong><span>'+esc(council?council.display_name:'Greater Jersey Region')+'</span></div></div><div class="top-actions"><button id="notificationSettingsBtn" class="notification-btn '+(me.daily_reminder_enabled?'enabled':'')+'" title="Daily reminder">◉</button><span class="role-pill">'+roleLabel(role)+'</span><span class="pill">'+esc(me.display_name)+'</span><button id="signOutBtn" class="ghost">Sign out</button></div></header><div class="layout"><aside class="sidebar"><nav class="nav">'+nav.map(function(n){return '<button data-view="'+n[0]+'" class="'+(activeView===n[0]?'active':'')+'">'+n[2]+' &nbsp;'+n[1]+'</button>'}).join('')+'</nav><div class="side-card"><div class="eyebrow">YOUR COUNCIL</div><strong style="margin-top:6px">'+esc(council?council.name:'Region')+'</strong><span>'+esc(council?council.display_name:'Greater Jersey Region')+'</span></div></aside><main class="content">'+body+'</main></div></div><div id="notificationSettingsHost"></div>';
   document.getElementById('signOutBtn').onclick=async function(){await sb.auth.signOut();location.reload()};
+  const notifyBtn=document.getElementById('notificationSettingsBtn');if(notifyBtn)notifyBtn.onclick=openNotificationSettings;
   wireView();
+}
+
+let dailyReminderTimer=null;
+function reminderStorageKey(){return 'gjr-daily-reminder-'+(me?me.id:'user')}
+function reminderTimeValue(){
+  const raw=String(me&&me.daily_reminder_time||'17:00:00');
+  return raw.slice(0,5);
+}
+function openNotificationSettings(){
+  const host=document.getElementById('notificationSettingsHost');if(!host)return;
+  const supported='Notification' in window;
+  const permission=supported?Notification.permission:'unsupported';
+  host.innerHTML='<div class="notification-backdrop" id="notificationBackdrop"><section class="notification-modal"><div class="notification-modal-head"><div><div class="eyebrow">DAILY HUB REMINDER</div><h2>Don\'t miss updates.</h2><p>Get one browser reminder each day to check the Hub, new chats, tasks, and schedule updates.</p></div><button class="modal-close" id="notificationClose">×</button></div><div class="notification-setting-row"><div><strong>Daily reminder</strong><span>Optional — turn it off anytime.</span></div><label class="switch"><input id="dailyReminderToggle" type="checkbox" '+(me.daily_reminder_enabled?'checked':'')+'><span></span></label></div><label class="notification-time-label">Reminder time<input id="dailyReminderTime" type="time" value="'+reminderTimeValue()+'"></label><div class="notification-permission '+permission+'"><span>Browser permission</span><strong>'+esc(permission==='granted'?'Allowed':permission==='denied'?'Blocked':permission==='unsupported'?'Not supported':'Not enabled yet')+'</strong></div><div class="notification-actions"><button class="ghost" id="testReminderBtn">Send test</button><button class="primary" id="saveReminderBtn">Save reminder</button></div><div id="notificationStatus" class="status-line"></div></section></div>';
+  document.getElementById('notificationClose').onclick=function(){host.innerHTML=''};
+  document.getElementById('notificationBackdrop').onclick=function(e){if(e.target.id==='notificationBackdrop')host.innerHTML=''};
+  document.getElementById('testReminderBtn').onclick=async function(){
+    const ok=await ensureNotificationPermission();
+    if(!ok){setNotificationStatus('Browser notifications are not allowed.');return;}
+    showHubReminder(true);
+  };
+  document.getElementById('saveReminderBtn').onclick=saveNotificationSettings;
+}
+function setNotificationStatus(t){const el=document.getElementById('notificationStatus');if(el)el.textContent=t}
+async function ensureNotificationPermission(){
+  if(!('Notification' in window))return false;
+  if(Notification.permission==='granted')return true;
+  if(Notification.permission==='denied')return false;
+  const p=await Notification.requestPermission();
+  return p==='granted';
+}
+async function saveNotificationSettings(){
+  const enabled=document.getElementById('dailyReminderToggle').checked;
+  const time=document.getElementById('dailyReminderTime').value||'17:00';
+  if(enabled){
+    const ok=await ensureNotificationPermission();
+    if(!ok){setNotificationStatus('Allow browser notifications first, then try again.');return;}
+  }
+  const r=await sb.from('profiles').update({daily_reminder_enabled:enabled,daily_reminder_time:time+':00'}).eq('id',me.id);
+  if(r.error){setNotificationStatus(r.error.message);return;}
+  me.daily_reminder_enabled=enabled;me.daily_reminder_time=time+':00';
+  setNotificationStatus(enabled?'Daily reminder saved for '+fmtTime(time)+'.':'Daily reminder turned off.');
+  startDailyReminderWatcher();
+  setTimeout(function(){renderShell()},500);
+}
+function showHubReminder(isTest){
+  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  const n=new Notification(isTest?'GJR Hub test notification':'Check the GJR S\'gan Hub',{
+    body:isTest?'Notifications are working.':'Take a minute to check updates, chats, tasks, and your schedule.',
+    tag:isTest?'gjr-hub-test':'gjr-hub-daily',
+    renotify:false
+  });
+  n.onclick=function(){window.focus();activeView='dashboard';renderShell();n.close()};
+}
+function checkDailyReminder(){
+  if(!me||!me.daily_reminder_enabled||!('Notification' in window)||Notification.permission!=='granted')return;
+  const now=new Date(),today=iso(now),last=localStorage.getItem(reminderStorageKey());
+  if(last===today)return;
+  const parts=reminderTimeValue().split(':').map(Number);
+  const target=new Date(now.getFullYear(),now.getMonth(),now.getDate(),parts[0]||0,parts[1]||0,0,0);
+  if(now>=target){
+    showHubReminder(false);
+    localStorage.setItem(reminderStorageKey(),today);
+  }
+}
+function startDailyReminderWatcher(){
+  if(dailyReminderTimer){clearInterval(dailyReminderTimer);dailyReminderTimer=null}
+  checkDailyReminder();
+  dailyReminderTimer=setInterval(checkDailyReminder,30000);
 }
 
 function roleLabel(r){return r==='admin'?'Regional Admin':r==='council_sgan'?'Council S\'gan/S\'ganit':'Counterpart'}
