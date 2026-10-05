@@ -460,7 +460,7 @@ function wireView(){
   document.querySelectorAll('.deleteLeaderNote').forEach(function(btn){btn.onclick=deleteLeaderNote});
   const at=document.getElementById('addTaskBtn');if(at)at.onclick=addPersonalTask;
   const of=document.getElementById('oneForm');if(of)of.onsubmit=requestOne;
-  document.querySelectorAll('.reqAction').forEach(function(btn){btn.onclick=async function(){await sb.from('one_on_one_requests').update({status:btn.dataset.status}).eq('id',btn.dataset.id);await loadAll();renderShell()}});
+  document.querySelectorAll('.reqAction').forEach(function(btn){btn.onclick=handleOneOnOneRequest});
   const cf=document.getElementById('councilForm');if(cf)cf.onsubmit=addCouncil;
   const lf=document.getElementById('leaderForm');if(lf)lf.onsubmit=createLeader;
   const cpf=document.getElementById('counterpartForm');if(cpf)cpf.onsubmit=addCounterpart;
@@ -475,6 +475,46 @@ function wireView(){
   document.querySelectorAll('.openMeeting').forEach(function(btn){btn.onclick=function(){openMeetingModal(btn.dataset.meeting,btn.dataset.date)}});
 }
 
+async function handleOneOnOneRequest(e){
+  const btn=e.currentTarget,id=btn.dataset.id,status=btn.dataset.status;
+  const req=state.requests.find(function(r){return r.id===id});if(!req)return;
+
+  if(status==='declined'){
+    const d=await sb.from('one_on_one_requests').update({status:'declined'}).eq('id',id);
+    if(d.error){alert(d.error.message);return;}
+    await loadAll();renderShell();return;
+  }
+
+  const counterpartProfile=profile(req.counterpart_profile_id);
+  const cp=state.counterparts.find(function(c){return c.linked_profile_id===req.counterpart_profile_id});
+  const title='1:1 with '+(counterpartProfile?counterpartProfile.display_name:'Counterpart');
+  const meeting={
+    council_id:req.council_id,
+    title:title,
+    mode:'Online',
+    start_date:req.requested_date,
+    start_time:req.requested_start,
+    end_time:req.requested_end||null,
+    recurrence:'none',
+    url:'',
+    location:'',
+    owner_profile_id:me.id,
+    counterpart_id:cp?cp.id:null,
+    attendee_profile_id:req.counterpart_profile_id,
+    contact_type:'counterpart',
+    contact_name:counterpartProfile?counterpartProfile.display_name:'Counterpart',
+    notes:req.notes||''
+  };
+
+  const m=await sb.from('meetings').insert(meeting);
+  if(m.error){alert('Could not add the 1:1 to the schedule: '+m.error.message);return;}
+
+  const u=await sb.from('one_on_one_requests').update({status:'accepted'}).eq('id',id);
+  if(u.error){alert('Meeting was added, but the request status could not be updated: '+u.error.message);return;}
+
+  await loadAll();
+  renderShell();
+}
 async function deleteCounterpart(e){
   e.preventDefault();
   e.stopPropagation();
