@@ -66,18 +66,19 @@ async function loadAll(){
     sb.from('messages').select('*').or('sender_id.eq.'+me.id+',recipient_id.eq.'+me.id).order('created_at'),
     sb.from('program_planning_forms').select('*').order('created_at',{ascending:false}),
     sb.from('meeting_occurrence_notes').select('*').order('occurrence_date',{ascending:false}),
-    sb.from('leader_notes').select('*').order('updated_at',{ascending:false})
+    sb.from('leader_notes').select('*').order('updated_at',{ascending:false}),
+    sb.from('resources').select('*').order('created_at',{ascending:false})
   ];
   const out=await Promise.all(queries);
   state.profiles=out[0].data||[];state.councils=out[1].data||[];state.counterparts=out[2].data||[];
   state.templates=out[3].data||[];state.completions=out[4].data||[];state.meetings=out[5].data||[];
-  state.visits=out[6].data||[];state.requests=out[7].data||[];state.messages=out[8].data||[];state.programs=out[9].data||[];state.meetingNotes=out[10].data||[];state.leaderNotes=out[11].data||[];
+  state.visits=out[6].data||[];state.requests=out[7].data||[];state.messages=out[8].data||[];state.programs=out[9].data||[];state.meetingNotes=out[10].data||[];state.leaderNotes=out[11].data||[];state.resources=out[12].data||[];
 }
 
 function renderShell(){
   const role=me.role;
   const nav=[
-    ['dashboard','Overview','⌂'],['schedule','Schedule','◷'],['notes','Notes','✎'],['programs','Programs','▤'],['messages','Messages','✦']
+    ['dashboard','Overview','⌂'],['schedule','Schedule','◷'],['notes','Notes','✎'],['programs','Programs','▤'],['resources','Resources','◆'],['messages','Messages','✦']
   ];
   if(role!=='counterpart'){nav.push(['people','People','◎']);nav.push(['visits','Visits','↗']);}
   if(role==='admin')nav.push(['admin','Admin','⚙']);
@@ -162,6 +163,7 @@ function viewHtml(view){
   if(view==='schedule')return scheduleHtml();
   if(view==='notes')return notesHtml();
   if(view==='programs')return programsHtml();
+  if(view==='resources')return resourcesHtml();
   if(view==='messages')return messagesHtml();
   if(view==='people'&&me.role!=='counterpart')return peopleHtml();
   if(view==='visits'&&me.role!=='counterpart')return visitsHtml();
@@ -495,6 +497,73 @@ function hiddenProgramsHtml(forms){
   return '<section class="program-hidden"><div class="program-hidden-head"><div><div class="eyebrow">HIDDEN FROM YOUR VIEW</div><h3>'+forms.length+' hidden program'+(forms.length===1?'':'s')+'</h3></div></div><div class="program-hidden-list">'+forms.map(function(p){return '<div class="program-hidden-row"><div><strong>'+esc(p.program_name)+'</strong><span>'+esc(p.chapter_name)+(p.program_date?' · '+niceDate(p.program_date):'')+'</span></div><button class="ghost unhideProgram" data-id="'+p.id+'">Restore</button></div>'}).join('')+'</div></section>';
 }
 
+function resourcesHtml(){
+  const resources=(state.resources||[]).filter(function(r){return me.role==='admin'||r.council_id===me.council_id});
+  const cards=resources.length?'<div class="resource-grid">'+resources.map(function(r){
+    const author=profile(r.created_by);
+    const sharedLabel=r.share_all?'All counterparts':((r.counterpart_ids||[]).map(function(id){const c=state.counterparts.find(function(x){return x.id===id});return c?c.name:null}).filter(Boolean).join(', ')||'Selected counterparts');
+    const typeLabel=r.resource_type==='file'?'FILE':'LINK';
+    return '<article class="resource-card"><div class="resource-card-top"><div class="resource-type '+r.resource_type+'">'+typeLabel+'</div><div class="resource-card-actions">'+
+      (r.resource_type==='file'?'<button class="ghost openResourceFile" data-path="'+esc(r.file_path)+'">Open ↗</button>':'<a class="ghost resource-link" href="'+esc(r.url)+'" target="_blank" rel="noopener">Open ↗</a>')+
+      (me.role!=='counterpart'&&(r.created_by===me.id||me.role==='admin')?'<button class="danger-btn deleteResource" data-id="'+r.id+'" data-path="'+esc(r.file_path||'')+'">Delete</button>':'')+
+    '</div></div><h3>'+esc(r.title)+'</h3><p>'+esc(r.description||'No description added.')+'</p><div class="resource-meta"><span>Shared with: <strong>'+esc(sharedLabel)+'</strong></span><span>'+(author?'By '+esc(author.display_name)+' · ':'')+new Date(r.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</span></div></article>';
+  }).join('')+'</div>':'<div class="resource-empty"><div>◆</div><h3>No resources shared yet</h3><p>'+(me.role==='counterpart'?'Resources your Council S\'gan shares with you will show up here.':'Add links, documents, guides, and files for your counterparts.')+'</p></div>';
+
+  if(me.role==='counterpart'){
+    return '<section class="resource-hero"><div><div class="eyebrow">SHARED RESOURCES</div><h1>Everything you need.<br><span>In one place.</span></h1><p>Links, documents, and tools shared by your Council S\'gan.</p></div><div class="resource-hero-count"><strong>'+resources.length+'</strong><span>resources</span></div></section>'+cards;
+  }
+
+  const cps=state.counterparts.filter(function(c){return me.role==='admin'||c.council_id===me.council_id});
+  return '<section class="resource-hero leader"><div><div class="eyebrow">RESOURCE LIBRARY</div><h1>Share once.<br><span>Keep everyone aligned.</span></h1><p>Send links, guides, PDFs, documents, and other resources directly to your counterparts.</p></div><div class="resource-hero-count"><strong>'+resources.length+'</strong><span>shared</span></div></section>'+
+  '<section class="resource-create-card"><div class="resource-create-head"><div><div class="eyebrow">NEW RESOURCE</div><h2>Share something useful</h2><p>Choose a link or upload a file, then decide who should see it.</p></div><div class="resource-create-icon">＋</div></div>'+
+  '<form id="resourceForm" class="resource-form"><div class="resource-fields"><label>Title<input id="rTitle" required placeholder="e.g. FallCon Planning Guide"></label><label>Type<select id="rType"><option value="link">Link</option><option value="file">File</option></select></label><label class="wide">Description<textarea id="rDescription" rows="3" placeholder="What is this resource for?"></textarea></label><label class="wide resource-link-field">URL<input id="rUrl" type="url" placeholder="https://..."></label><label class="wide resource-file-field" style="display:none">Upload file<input id="rFile" type="file"></label></div>'+
+  '<div class="resource-sharing"><div class="resource-sharing-head"><div><strong>Who can see this?</strong><span>Share with everyone or choose specific counterparts.</span></div><label class="switch"><input id="rShareAll" type="checkbox" checked><span></span></label></div><div id="resourcePeoplePicker" class="resource-people-picker hidden">'+cps.map(function(c){return '<label class="resource-person-chip"><input class="resourcePerson" type="checkbox" value="'+c.id+'"><span>'+esc(c.name)+'<small>'+esc(c.chapter)+'</small></span></label>'}).join('')+'</div></div>'+
+  '<button class="primary resource-share-btn">Share resource →</button></form></section>'+cards;
+}
+
+async function submitResource(e){
+  e.preventDefault();
+  const type=v('rType'),title=v('rTitle').trim(),description=v('rDescription').trim();
+  const shareAll=document.getElementById('rShareAll').checked;
+  const counterpartIds=Array.from(document.querySelectorAll('.resourcePerson:checked')).map(function(x){return x.value});
+  if(!shareAll&&!counterpartIds.length){alert('Choose at least one counterpart, or share with everyone.');return;}
+
+  let url='',filePath='',fileName='';
+  if(type==='link'){
+    url=v('rUrl').trim();
+    if(!url){alert('Add a link first.');return;}
+  }else{
+    const input=document.getElementById('rFile'),file=input&&input.files&&input.files[0];
+    if(!file){alert('Choose a file first.');return;}
+    if(file.size>20*1024*1024){alert('Files must be 20 MB or smaller.');return;}
+    const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    filePath=me.council_id+'/'+me.id+'/'+Date.now()+'-'+safe;
+    fileName=file.name;
+    const up=await sb.storage.from('shared-resources').upload(filePath,file,{contentType:file.type||'application/octet-stream'});
+    if(up.error){alert(up.error.message);return;}
+  }
+
+  const row={council_id:me.council_id,created_by:me.id,title:title,description:description,resource_type:type,url:url,file_path:filePath,file_name:fileName,share_all:shareAll,counterpart_ids:shareAll?[]:counterpartIds};
+  const r=await sb.from('resources').insert(row);
+  if(r.error){
+    if(filePath)await sb.storage.from('shared-resources').remove([filePath]);
+    alert(r.error.message);return;
+  }
+  await loadAll();renderShell();
+}
+
+async function deleteResource(e){
+  const btn=e.currentTarget,id=btn.dataset.id,path=btn.dataset.path||'';
+  if(!confirm('Delete this resource?'))return;
+  if(path){
+    const sr=await sb.storage.from('shared-resources').remove([path]);
+    if(sr.error){alert(sr.error.message);return;}
+  }
+  const r=await sb.from('resources').delete().eq('id',id);
+  if(r.error){alert(r.error.message);return;}
+  await loadAll();renderShell();
+}
+
 function messagesHtml(){
   const people=state.profiles.filter(function(p){
     if(p.id===me.id||p.council_id!==me.council_id)return false;
@@ -536,6 +605,11 @@ function wireView(){
   const lf=document.getElementById('leaderForm');if(lf)lf.onsubmit=createLeader;
   const cpf=document.getElementById('counterpartForm');if(cpf)cpf.onsubmit=addCounterpart;
   const pf=document.getElementById('programForm');if(pf)pf.onsubmit=submitProgram;
+  const rf=document.getElementById('resourceForm');if(rf)rf.onsubmit=submitResource;
+  const rt=document.getElementById('rType');if(rt)rt.onchange=function(){const isFile=rt.value==='file';const lf=document.querySelector('.resource-link-field'),ff=document.querySelector('.resource-file-field');if(lf)lf.style.display=isFile?'none':'block';if(ff)ff.style.display=isFile?'block':'none'};
+  const rsa=document.getElementById('rShareAll');if(rsa)rsa.onchange=function(){const picker=document.getElementById('resourcePeoplePicker');if(picker)picker.classList.toggle('hidden',rsa.checked)};
+  document.querySelectorAll('.openResourceFile').forEach(function(btn){btn.onclick=async function(){const r=await sb.storage.from('shared-resources').createSignedUrl(btn.dataset.path,300);if(r.error){alert(r.error.message);return;}window.open(r.data.signedUrl,'_blank')}});
+  document.querySelectorAll('.deleteResource').forEach(function(btn){btn.onclick=deleteResource});
   const pFile=document.getElementById('pFile');if(pFile)pFile.onchange=function(){const zone=document.querySelector('.program-upload-zone');if(!zone)return;const file=pFile.files&&pFile.files[0];zone.classList.toggle('has-file',!!file);const name=zone.querySelector('.upload-chip');if(name&&file)name.textContent=file.name.length>18?file.name.slice(0,15)+'...':file.name;};
   document.querySelectorAll('.openProgramPdf').forEach(function(btn){btn.onclick=async function(){const r=await sb.storage.from('program-planning-forms').createSignedUrl(btn.dataset.path,300);if(r.error){alert(r.error.message);return;}window.open(r.data.signedUrl,'_blank')}});
   document.querySelectorAll('.programDecision').forEach(function(btn){btn.onclick=async function(){const box=document.querySelector('.programFeedback[data-id="'+btn.dataset.id+'"]');const feedback=box?box.value.trim():'';if(btn.dataset.status==='needs_changes'&&!feedback){alert('Add a helpful note explaining how the program can be improved.');return;}const r=await sb.from('program_planning_forms').update({status:btn.dataset.status,council_feedback:feedback,reviewed_by:me.id,reviewed_at:new Date().toISOString()}).eq('id',btn.dataset.id);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}});
