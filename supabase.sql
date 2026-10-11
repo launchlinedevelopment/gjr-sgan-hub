@@ -490,3 +490,18 @@ create policy "owners delete leader notes" on leader_notes for delete to authent
 alter table profiles
 add column if not exists daily_reminder_enabled boolean not null default false,
 add column if not exists daily_reminder_time time without time zone not null default '17:00:00';
+
+create table if not exists resources (
+  id uuid primary key default gen_random_uuid(),
+  council_id uuid not null references councils(id) on delete cascade,
+  created_by uuid not null references profiles(id) on delete cascade,
+  title text not null,
+  description text not null default '',
+  resource_type text not null default 'link',
+  url text not null default '',
+  file_path text not null default '',
+  file_name text not null default '',
+  share_all boolean not null default true,
+  counterpart_ids uuid[] not null default '{}'::uuid[],
+  created_at timestamptz not null default now()
+);
