@@ -3,7 +3,7 @@ const app=document.getElementById('app');
 const configured=!!(cfg.supabaseUrl&&cfg.supabaseAnonKey);
 const sb=configured?window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey):null;
 let session=null, me=null, council=null, state={};
-let activeView='dashboard', activeThread=null, scheduleWeekOffset=0;
+let activeView='dashboard', activeThread=null, scheduleWeekOffset=0, activeCouncilBrowseId=null;
 
 document.addEventListener('click',function(e){
   const nav=e.target.closest('[data-view]');
@@ -67,12 +67,13 @@ async function loadAll(){
     sb.from('program_planning_forms').select('*').order('created_at',{ascending:false}),
     sb.from('meeting_occurrence_notes').select('*').order('occurrence_date',{ascending:false}),
     sb.from('leader_notes').select('*').order('updated_at',{ascending:false}),
-    sb.from('resources').select('*').order('created_at',{ascending:false})
+    sb.from('resources').select('*').order('created_at',{ascending:false}),
+    sb.from('council_sgan_group_messages').select('*').order('created_at')
   ];
   const out=await Promise.all(queries);
   state.profiles=out[0].data||[];state.councils=out[1].data||[];state.counterparts=out[2].data||[];
   state.templates=out[3].data||[];state.completions=out[4].data||[];state.meetings=out[5].data||[];
-  state.visits=out[6].data||[];state.requests=out[7].data||[];state.messages=out[8].data||[];state.programs=out[9].data||[];state.meetingNotes=out[10].data||[];state.leaderNotes=out[11].data||[];state.resources=out[12].data||[];
+  state.visits=out[6].data||[];state.requests=out[7].data||[];state.messages=out[8].data||[];state.programs=out[9].data||[];state.meetingNotes=out[10].data||[];state.leaderNotes=out[11].data||[];state.resources=out[12].data||[];state.sganGroupMessages=out[13].data||[];
 }
 
 function renderShell(){
@@ -80,10 +81,10 @@ function renderShell(){
   const nav=[
     ['dashboard','Overview','⌂'],['schedule','Schedule','◷'],['notes','Notes','✎'],['programs','Programs','▤'],['resources','Resources','◆'],['messages','Messages','✦']
   ];
-  if(role!=='counterpart'){nav.push(['people','People','◎']);nav.push(['visits','Visits','↗']);}
+  if(role!=='counterpart'){nav.push(['councils','Councils','◇']);nav.push(['people','People','◎']);nav.push(['visits','Visits','↗']);}
   if(role==='admin')nav.push(['admin','Admin','⚙']);
   const body=viewHtml(activeView);
-  app.innerHTML='<div class="shell"><header class="topbar"><div class="brand"><div class="logo">GJR</div><div><strong>GJR S\'gan Hub</strong><span>'+esc(council?council.display_name:'Greater Jersey Region')+'</span></div></div><div class="top-actions"><button id="notificationSettingsBtn" class="notification-btn '+(me.daily_reminder_enabled?'enabled':'')+'" title="Daily reminder"><span class="notification-bell">◉</span><span class="notification-label">Reminder</span></button><span class="role-pill">'+roleLabel(role)+'</span><span class="pill">'+esc(me.display_name)+'</span><button id="signOutBtn" class="ghost">Sign out</button></div></header><div class="layout"><aside class="sidebar"><nav class="nav">'+nav.map(function(n){return '<button data-view="'+n[0]+'" class="'+(activeView===n[0]?'active':'')+'">'+n[2]+' &nbsp;'+n[1]+'</button>'}).join('')+'</nav><button class="side-reminder-card openReminderSettings"><div class="side-reminder-icon">◉</div><div><div class="eyebrow">DAILY REMINDER</div><strong>'+(me.daily_reminder_enabled?'On · '+fmtTime(reminderTimeValue()):'Set reminder')+'</strong><span>'+(me.daily_reminder_enabled?'Tap to change time or turn off':'Get a daily nudge to check chats + updates')+'</span></div><div class="side-reminder-arrow">→</div></button><div class="side-card"><div class="eyebrow">YOUR COUNCIL</div><strong style="margin-top:6px">'+esc(council?council.name:'Region')+'</strong><span>'+esc(council?council.display_name:'Greater Jersey Region')+'</span></div></aside><main class="content">'+body+'</main></div></div><div id="notificationSettingsHost"></div>';
+  app.innerHTML='<div class="shell"><header class="topbar"><div class="brand"><div class="logo">GJR</div><div><strong>GJR S\'gan Hub</strong><span>'+esc(council?council.display_name:'Greater Jersey Region')+'</span></div></div><div class="top-actions"><button id="notificationSettingsBtn" class="notification-btn '+(me.daily_reminder_enabled?'enabled':'')+'" title="Daily reminder"><span class="notification-bell">◉</span><span class="notification-label">Reminder</span></button><span class="role-pill">'+roleLabel(role)+'</span><span class="pill">'+esc(me.display_name)+'</span><button id="signOutBtn" class="ghost">Sign out</button></div></header><div class="layout"><aside class="sidebar"><nav class="nav">'+nav.map(function(n){return '<button data-view="'+n[0]+'" class="'+(activeView===n[0]?'active':'')+'">'+n[2]+' &nbsp;'+n[1]+'</button>'}).join('')+'</nav><button class="side-reminder-card openReminderSettings"><div class="side-reminder-icon">◉</div><div><div class="eyebrow">DAILY REMINDER</div><strong>'+(me.daily_reminder_enabled?'On · '+fmtTime(reminderTimeValue()):'Set reminder')+'</strong><span>'+(me.daily_reminder_enabled?'Tap to change time or turn off':'Get a daily nudge to check chats + updates')+'</span></div><div class="side-reminder-arrow">→</div></button><div class="side-card"><div class="eyebrow">YOUR COUNCIL</div><strong style="margin-top:6px">'+esc(council?council.name:'Region')+'</strong><span>'+esc(council?council.display_name:'Greater Jersey Region')+'</span></div></aside><main class="content">'+body+'</main></div></div><div id="notificationSettingsHost"></div><div id="taskModalHost"></div>';
   document.getElementById('signOutBtn').onclick=async function(){await sb.auth.signOut();location.reload()};
   const notifyBtn=document.getElementById('notificationSettingsBtn');if(notifyBtn)notifyBtn.onclick=openNotificationSettings;
   document.querySelectorAll('.openReminderSettings').forEach(function(btn){btn.onclick=openNotificationSettings});
@@ -165,6 +166,7 @@ function viewHtml(view){
   if(view==='programs')return programsHtml();
   if(view==='resources')return resourcesHtml();
   if(view==='messages')return messagesHtml();
+  if(view==='councils'&&me.role!=='counterpart')return councilsHtml();
   if(view==='people'&&me.role!=='counterpart')return peopleHtml();
   if(view==='visits'&&me.role!=='counterpart')return visitsHtml();
   if(view==='admin'&&me.role==='admin')return adminHtml();
@@ -174,8 +176,8 @@ function viewHtml(view){
 function dashboardHtml(){
   const templates=visibleTemplates(),done=templates.filter(isDone).length,pct=templates.length?Math.round(done/templates.length*100):100;
   const today=iso(new Date());
-  const overdue=templates.filter(function(t){return !isDone(t)&&t.due_date&&t.due_date<today}).length;
-  const dueSoon=templates.filter(function(t){if(isDone(t)||!t.due_date)return false;const diff=Math.ceil((new Date(t.due_date+'T12:00:00')-new Date(today+'T12:00:00'))/86400000);return diff>=0&&diff<=3}).length;
+  const overdue=templates.filter(function(t){return t.cadence==='once'&&!isDone(t)&&t.due_date&&t.due_date<today}).length;
+  const dueSoon=templates.filter(function(t){if(t.cadence!=='once'||isDone(t)||!t.due_date)return false;const diff=Math.ceil((new Date(t.due_date+'T12:00:00')-new Date(today+'T12:00:00'))/86400000);return diff>=0&&diff<=3}).length;
   const nextList=nextOccurrences(28),next=nextList[0];
   const todayMeetings=nextList.filter(function(x){return iso(x.date)===today}).length;
   const weekMeetings=nextList.filter(function(x){const diff=Math.floor((new Date(iso(x.date)+'T12:00:00')-new Date(today+'T12:00:00'))/86400000);return diff>=0&&diff<=6}).length;
@@ -191,7 +193,25 @@ function dashboardHtml(){
 function dashboardSubtitle(){return me.role==='counterpart'?'Your council schedule, 1:1s, messages, and action items in one place.':'Counterparts, focus chapters, steering, meetings, and council follow-ups in one place.'}
 
 function visibleTemplates(){return state.templates.filter(function(t){return t.owner_profile_id===me.id})}
-function periodKey(t){const d=new Date();if(t.cadence==='once')return 'once';if(t.cadence==='daily')return iso(d);const x=new Date(d);const off=(x.getDay()+6)%7;x.setDate(x.getDate()-off);return iso(x)}
+function periodKey(t){
+  const d=new Date();
+  if(t.cadence==='once')return 'once';
+  if(t.cadence==='daily')return iso(d);
+  if(t.cadence==='monthly')return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  const x=new Date(d.getFullYear(),d.getMonth(),d.getDate(),12);
+  const off=(x.getDay()+6)%7;x.setDate(x.getDate()-off);
+  if(t.cadence==='biweekly'){
+    const anchor=new Date(1970,0,5,12);
+    const weeks=Math.floor((x-anchor)/(7*86400000));
+    x.setDate(x.getDate()-(Math.abs(weeks)%2));
+  }
+  return iso(x);
+}
+function taskScheduleText(t){
+  if(t.cadence==='once')return t.due_date?'Due '+niceDate(t.due_date):'No deadline';
+  const labels={daily:'Daily',weekly:'Weekly',biweekly:'Every other week',monthly:'Monthly'};
+  return (labels[t.cadence]||'Recurring')+(t.until_date?' · until '+niceDate(t.until_date):'');
+}
 function isDone(t){const p=periodKey(t);return state.completions.some(function(c){return c.template_id===t.id&&c.period_key===p})}
 function checklistHtml(ts){
   if(!ts.length)return '<div class="task-empty"><div class="task-empty-icon">✓</div><strong>Nothing on your plate</strong><span>Your checklist is clear.</span></div>';
@@ -199,8 +219,8 @@ function checklistHtml(ts){
   return '<div class="task-board">'+Object.keys(groups).map(function(g){
     const group=groups[g],doneCount=group.filter(isDone).length;
     return '<section class="task-group"><div class="task-group-head"><div><div class="task-group-kicker">CHECKLIST</div><h3>'+esc(g)+'</h3></div><div class="task-group-progress"><strong>'+doneCount+'/'+group.length+'</strong><span>done</span></div></div><div class="task-list">'+group.map(function(t){
-      const d=isDone(t),overdue=!d&&t.due_date&&t.due_date<iso(new Date());
-      const due=t.due_date?niceDate(t.due_date):'No deadline';
+      const d=isDone(t),overdue=t.cadence==='once'&&!d&&t.due_date&&t.due_date<iso(new Date());
+      const due=taskScheduleText(t);
       return '<div class="task-card '+(d?'done ':'')+(overdue?'overdue':'')+'"><label class="task-check"><input type="checkbox" class="checkToggle" data-id="'+t.id+'" '+(d?'checked':'')+'><span></span></label><div class="task-card-copy"><strong>'+esc(t.title)+'</strong><div class="task-meta"><span class="task-badge '+(t.assigned_by?'assigned':'personal')+'">'+(t.assigned_by?'Assigned':'Personal')+'</span><span class="task-due '+(overdue?'overdue':'')+'">'+due+'</span></div></div><button class="task-delete deleteTask" data-id="'+t.id+'" title="Delete task">×</button></div>';
     }).join('')+'</div></section>';
   }).join('')+'</div>';
@@ -287,7 +307,7 @@ function scheduleHtml(){
     return '<div class="day-col premium '+(isToday?'today':'')+'"><div class="day-head"><div><span>'+dayName(d)+'</span><strong>'+d.getDate()+'</strong></div><small>'+d.toLocaleDateString('en-US',{month:'short'})+'</small></div><div class="day-events">'+(activeHtml+cancelledHtml||'<div class="day-empty"><span>+</span><small>Open day</small></div>')+'</div></div>';
   }).join('')+'</div></section>';
   if(me.role!=='counterpart'){
-    html+='<section class="schedule-create-card"><div class="schedule-create-head"><div><div class="eyebrow">ADD TO CALENDAR</div><h2>Create a meeting</h2><p>Build it once. Recurring meetings stay on your schedule automatically.</p></div><div class="schedule-create-icon">＋</div></div><form id="meetingForm" class="schedule-form"><label class="wide">Meeting name<input id="mTitle" placeholder="e.g. Council S\'ganim Call" required></label><label class="wide">Who are you meeting with?<select id="mCounterpart"><option value="">No specific contact</option><option value="__GJR_STAFF__">GJR Staff</option>'+contacts.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+' — '+esc(c.chapter)+'</option>'}).join('')+'</select></label><label>Type<select id="mMode"><option>Online</option><option>In-Person</option></select></label><label>Repeats<select id="mRepeat"><option value="none">One time</option><option value="weekly">Weekly</option><option value="biweekly">Every other week</option></select></label><label>Date<input id="mDate" type="date" required></label><label>Starts<input id="mStart" type="time" required></label><label>Ends<input id="mEnd" type="time"></label><label>Location<input id="mLocation" placeholder="Optional"></label><label class="wide">Meeting link<input id="mUrl" type="url" placeholder="https://..."></label><button class="primary schedule-create-btn">Add to schedule →</button></form></section>';
+    html+='<section class="schedule-create-card"><div class="schedule-create-head"><div><div class="eyebrow">ADD TO CALENDAR</div><h2>Create a meeting</h2><p>Build it once. Recurring meetings stay on your schedule automatically.</p></div><div class="schedule-create-icon">＋</div></div><form id="meetingForm" class="schedule-form"><label class="wide">Meeting name<input id="mTitle" placeholder="e.g. Council S\'ganim Call" required></label><label class="wide">Who are you meeting with?<select id="mCounterpart"><option value="">No specific contact</option><option value="__GJR_STAFF__">GJR Staff</option><option value="__OTHER__">Other…</option>'+contacts.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+' — '+esc(c.chapter)+'</option>'}).join('')+'</select></label><label class="wide" id="mOtherWrap" style="display:none">Other person / group<input id="mOther" placeholder="Type who you're meeting with"></label><label>Type<select id="mMode"><option>Online</option><option>In-Person</option></select></label><label>Repeats<select id="mRepeat"><option value="none">One time</option><option value="weekly">Weekly</option><option value="biweekly">Every other week</option></select></label><label>Date<input id="mDate" type="date" required></label><label>Starts<input id="mStart" type="time" required></label><label>Ends<input id="mEnd" type="time"></label><label>Location<input id="mLocation" placeholder="Optional"></label><label class="wide">Meeting link<input id="mUrl" type="url" placeholder="https://..."></label><button class="primary schedule-create-btn">Add to schedule →</button></form></section>';
     html+=requestsLeaderHtml();
   }else{
     html+=requestOneOnOneHtml();
@@ -352,6 +372,43 @@ function requestsLeaderHtml(){
   return '<section class="card" style="margin-top:15px"><div class="eyebrow">1:1 REQUESTS</div><h2>Counterpart requests</h2><div class="list">'+reqs.map(function(r){const p=profile(r.counterpart_profile_id);return '<div class="item"><div><strong>'+esc(p?p.display_name:'Counterpart')+'</strong><span>'+niceDate(r.requested_date)+' · '+fmtTime(r.requested_start)+(r.requested_end?'–'+fmtTime(r.requested_end):'')+' · '+esc(r.status)+'</span><small>'+esc(r.notes||'')+'</small></div><div class="actions">'+(r.status==='requested'?'<button class="tiny-btn reqAction" data-id="'+r.id+'" data-status="accepted">Accept</button><button class="tiny-btn reqAction" data-id="'+r.id+'" data-status="declined">Decline</button>':'')+'</div></div>'}).join('')+'</div></section>';
 }
 
+function councilsHtml(){
+  const councils=state.councils.slice().sort(function(a,b){return a.name.localeCompare(b.name)});
+  if(activeCouncilBrowseId)return councilDetailHtml(activeCouncilBrowseId);
+  return '<section class="council-browser-hero"><div><div class="eyebrow">COUNCIL NETWORK</div><h1>See the whole region.<br><span>Help each other out.</span></h1><p>Open any council for a read-only look at its people, tasks, schedule, programs, and shared resources.</p></div><div class="council-browser-count"><strong>'+councils.length+'</strong><span>councils</span></div></section><div class="council-browser-grid">'+councils.map(function(c){
+    const people=state.counterparts.filter(function(x){return x.council_id===c.id});
+    const leaders=state.profiles.filter(function(p){return p.council_id===c.id&&p.role==='council_sgan'});
+    const focus=people.filter(function(x){return x.is_focus_chapter}).length;
+    return '<button class="council-browser-card openCouncil" data-council="'+c.id+'"><div class="council-browser-card-top"><div class="council-browser-code">'+esc(c.name)+'</div>'+(c.id===me.council_id?'<span class="your-council-badge">Your council</span>':'')+'</div><h3>'+esc(c.display_name)+'</h3><div class="council-browser-stats"><span><strong>'+leaders.length+'</strong> S\'ganim</span><span><strong>'+people.length+'</strong> people</span><span><strong>'+focus+'</strong> focus</span></div><div class="council-browser-open">Open council →</div></button>';
+  }).join('')+'</div>';
+}
+function councilDetailHtml(councilId){
+  const c=state.councils.find(function(x){return x.id===councilId});
+  if(!c){activeCouncilBrowseId=null;return councilsHtml();}
+  const people=state.counterparts.filter(function(x){return x.council_id===c.id});
+  const leaders=state.profiles.filter(function(p){return p.council_id===c.id&&p.role==='council_sgan'});
+  const counterpartProfiles=people.map(function(x){return x.linked_profile_id}).filter(Boolean);
+  const tasks=state.templates.filter(function(t){return counterpartProfiles.includes(t.owner_profile_id)});
+  const resources=(state.resources||[]).filter(function(r){return r.council_id===c.id});
+  const programs=(state.programs||[]).filter(function(p){return p.council_id===c.id});
+  const upcoming=[];
+  const today=new Date();
+  for(let i=0;i<30;i++){
+    const d=new Date(today.getFullYear(),today.getMonth(),today.getDate()+i,12);
+    state.meetings.forEach(function(m){if(m.council_id===c.id&&occurrence(m,d))upcoming.push({meeting:m,date:d})});
+  }
+  upcoming.sort(function(a,b){return iso(a.date).localeCompare(iso(b.date))||String(a.meeting.start_time).localeCompare(String(b.meeting.start_time))});
+  return '<button class="ghost council-back" id="councilBrowserBack">← All councils</button><section class="council-detail-hero"><div><div class="eyebrow">'+esc(c.name)+'</div><h1>'+esc(c.display_name)+'</h1><p>Read-only regional view · collaborate without changing another council\'s workspace.</p></div><div class="council-detail-leaders">'+(leaders.length?leaders.map(function(p){return '<span>'+esc(p.display_name)+'</span>'}).join(''):'<span>No Council S\'gan account yet</span>')+'</div></section>'+
+  '<section class="council-detail-metrics"><div><strong>'+people.length+'</strong><span>People</span></div><div><strong>'+tasks.length+'</strong><span>Counterpart tasks</span></div><div><strong>'+upcoming.length+'</strong><span>Next 30d meetings</span></div><div><strong>'+programs.length+'</strong><span>Programs</span></div><div><strong>'+resources.length+'</strong><span>Resources</span></div></section>'+
+  '<div class="council-detail-grid"><section class="council-detail-panel"><div class="eyebrow">PEOPLE</div><h2>Counterparts + focus chapters</h2><div class="council-readonly-list">'+(people.length?people.map(function(p){return '<div class="council-person-row"><div><strong>'+esc(p.name)+'</strong><span>'+esc(p.chapter)+'</span></div>'+(p.is_focus_chapter?'<b>Focus chapter</b>':'')+'</div>'}).join(''):'<div class="empty">No people added yet.</div>')+'</div></section>'+
+  '<section class="council-detail-panel"><div class="eyebrow">UPCOMING</div><h2>Schedule</h2><div class="council-readonly-list">'+(upcoming.length?upcoming.slice(0,12).map(function(x){return '<div class="council-meeting-row"><div><strong>'+esc(x.meeting.title)+'</strong><span>'+niceDate(iso(x.date))+' · '+meetingTimeText(x.meeting)+'</span></div><small>'+esc(meetingContactName(x.meeting)||'')+'</small></div>'}).join(''):'<div class="empty">No upcoming meetings.</div>')+'</div></section>'+
+  '<section class="council-detail-panel"><div class="eyebrow">TASKS</div><h2>Counterpart workload</h2><div class="council-readonly-list">'+(tasks.length?tasks.slice(0,16).map(function(t){const owner=profile(t.owner_profile_id);return '<div class="council-task-row"><div><strong>'+esc(t.title)+'</strong><span>'+(owner?esc(owner.display_name)+' · ':'')+taskScheduleText(t)+'</span></div><b>'+esc(t.cadence)+'</b></div>'}).join(''):'<div class="empty">No counterpart tasks.</div>')+'</div></section>'+
+  '<section class="council-detail-panel"><div class="eyebrow">PROGRAMS + RESOURCES</div><h2>Shared work</h2><div class="council-readonly-list">'+
+  programs.slice(0,8).map(function(p){return '<div class="council-shared-row"><div><strong>'+esc(p.program_name)+'</strong><span>Program · '+esc(p.chapter_name)+'</span></div><button class="tiny-btn browseProgramPdf" data-path="'+esc(p.file_path)+'">PDF ↗</button></div>'}).join('')+
+  resources.slice(0,8).map(function(r){return '<div class="council-shared-row"><div><strong>'+esc(r.title)+'</strong><span>Resource · '+esc(r.resource_type)+'</span></div>'+(r.resource_type==='file'?'<button class="tiny-btn browseResourceFile" data-path="'+esc(r.file_path)+'">Open ↗</button>':'<a class="tiny-btn" href="'+esc(r.url)+'" target="_blank" rel="noopener">Open ↗</a>')+'</div>'}).join('')+
+  (!programs.length&&!resources.length?'<div class="empty">Nothing shared yet.</div>':'')+'</div></section></div>';
+}
+
 function peopleHtml(){
   const cps=state.counterparts.filter(function(c){return me.role==='admin'||c.council_id===me.council_id});
   const linkedCount=cps.filter(function(c){return !!c.linked_profile_id}).length;
@@ -360,7 +417,7 @@ function peopleHtml(){
     ? '<label>Council<select id="cpCouncil">'+state.councils.map(function(c){return '<option value="'+c.id+'" '+(c.id===me.council_id?'selected':'')+'>'+esc(c.name)+' — '+esc(c.display_name)+'</option>'}).join('')+'</select></label>'
     : '';
   return '<section class="people-hero"><div><div class="eyebrow">COUNTERPART COMMAND CENTER</div><h1>Your people.<br><span>Your pulse.</span></h1><p>See every Chapter S\'gan at a glance — meetings, tasks, calendar, follow-ups, and account access.</p></div><div class="people-hero-stats"><div><strong>'+cps.length+'</strong><span>Counterparts</span></div><div><strong>'+linkedCount+'</strong><span>Accounts live</span></div><div><strong>'+dueCount+'</strong><span>Follow-ups due</span></div></div></section>'+
-  '<section class="people-add-panel"><div class="people-add-copy"><div class="eyebrow">ADD COUNTERPART</div><h2>Bring someone into your council</h2><p>Create their CRM profile first, then create their login when you are ready.</p></div><form id="counterpartForm" class="people-add-form"><label>Full name<input id="cpName" placeholder="Counterpart name" required></label><label>Chapter<input id="cpChapter" placeholder="Chapter name" required></label>'+councilField+'<label>Notes<input id="cpNotes" placeholder="Optional context"></label><button class="primary">+ Add counterpart</button></form></section>'+
+  '<section class="people-add-panel"><div class="people-add-copy"><div class="eyebrow">ADD PERSON</div><h2>Add a counterpart or focus chapter</h2><p>Keep your chapter S'ganim and focus-chapter contacts together in one place.</p></div><form id="counterpartForm" class="people-add-form"><label>Full name<input id="cpName" placeholder="Counterpart name" required></label><label>Chapter<input id="cpChapter" placeholder="Chapter name" required></label>'+councilField+'<label>Notes<input id="cpNotes" placeholder="Optional context"></label><label class="focus-toggle-label"><input id="cpFocus" type="checkbox"> <span>Focus chapter contact</span></label><button class="primary">+ Add person</button></form></section>'+
   '<section class="people-board"><div class="people-board-head"><div><div class="eyebrow">YOUR COUNTERPARTS</div><h2>'+cps.length+' people in your network</h2></div><span>Open a workspace to see their tasks + calendar</span></div><div class="people-grid premium">'+cps.map(counterpartCard).join('')+'</div></section>'+
   '<div id="counterpartWorkspaceHost"></div>';
 }
@@ -374,7 +431,7 @@ function counterpartTaskStats(profileId){
   const overdue=tasks.filter(function(t){
     const p=periodKey(t);
     const isDone=state.completions.some(function(c){return c.template_id===t.id&&c.profile_id===profileId&&c.period_key===p});
-    return !isDone&&t.due_date&&t.due_date<today;
+    return t.cadence==='once'&&!isDone&&t.due_date&&t.due_date<today;
   }).length;
   return {total:tasks.length,done:done,open:Math.max(0,tasks.length-done),overdue:overdue};
 }
@@ -396,7 +453,7 @@ function counterpartCard(c){
   const upcoming=linked?counterpartUpcoming(linked.id,30):[];
   const next=upcoming[0];
   const followDue=c.next_follow_up&&c.next_follow_up<=iso(new Date());
-  return '<article class="person-card premium '+(followDue?'follow-due':'')+'"><div class="person-card-glow"></div><div class="person-card-top"><div class="avatar premium">'+esc(initials)+'</div><div class="person-identity"><strong>'+esc(c.name)+'</strong><span>'+esc(c.chapter)+'</span></div><div class="account-dot '+(linked?'live':'offline')+'"><i></i>'+(linked?'Live':'No login')+'</div></div>'+
+  return '<article class="person-card premium '+(followDue?'follow-due':'')+'"><div class="person-card-glow"></div><div class="person-card-top"><div class="avatar premium">'+esc(initials)+'</div><div class="person-identity"><strong>'+esc(c.name)+'</strong><span>'+esc(c.chapter)+'</span>'+(c.is_focus_chapter?'<b class="focus-person-badge">Focus chapter</b>':'')+'</div><div class="account-dot '+(linked?'live':'offline')+'"><i></i>'+(linked?'Live':'No login')+'</div></div>'+
   '<div class="person-metrics"><div><span>Meetings</span><strong>'+meetingCount+'</strong></div><div><span>Open tasks</span><strong>'+stats.open+'</strong></div><div><span>Next event</span><strong>'+(next?niceDate(iso(next.date)):'—')+'</strong></div></div>'+
   '<div class="person-next"><span>Next follow-up</span><strong>'+(c.next_follow_up?niceDate(c.next_follow_up):'Not set')+'</strong>'+(followDue?'<b>Due</b>':'')+'</div>'+
   '<div class="person-fields premium"><label>Last check-in<input class="cpField" data-id="'+c.id+'" data-field="last_check_in" type="date" value="'+(c.last_check_in||'')+'"></label><label>Next follow-up<input class="cpField" data-id="'+c.id+'" data-field="next_follow_up" type="date" value="'+(c.next_follow_up||'')+'"></label></div>'+
@@ -415,8 +472,8 @@ function counterpartWorkspaceHtml(counterpartId){
   const taskHtml=tasks.length?tasks.map(function(t){
     const p=periodKey(t);
     const done=state.completions.some(function(x){return x.template_id===t.id&&x.profile_id===linked.id&&x.period_key===p});
-    const overdue=!done&&t.due_date&&t.due_date<iso(new Date());
-    return '<div class="workspace-task premium '+(done?'done ':'')+(overdue?'overdue':'')+'"><div class="workspace-check premium">'+(done?'✓':'')+'</div><div class="workspace-task-copy"><strong>'+esc(t.title)+'</strong><div class="workspace-task-meta"><span>'+(t.assigned_by?'Assigned by council':'Personal task')+'</span><span class="'+(overdue?'overdue':'')+'">'+(t.due_date?'Due '+niceDate(t.due_date):'No deadline')+'</span></div></div><div class="workspace-task-state '+(done?'done':overdue?'overdue':'open')+'">'+(done?'Completed':overdue?'Overdue':'Open')+'</div><button class="task-delete deleteTask" data-id="'+t.id+'" data-workspace="'+counterpartId+'" title="Delete task">×</button></div>';
+    const overdue=t.cadence==='once'&&!done&&t.due_date&&t.due_date<iso(new Date());
+    return '<div class="workspace-task premium '+(done?'done ':'')+(overdue?'overdue':'')+'"><div class="workspace-check premium">'+(done?'✓':'')+'</div><div class="workspace-task-copy"><strong>'+esc(t.title)+'</strong><div class="workspace-task-meta"><span>'+(t.assigned_by?'Assigned by council':'Personal task')+'</span><span class="'+(overdue?'overdue':'')+'">'+taskScheduleText(t)+'</span></div></div><div class="workspace-task-state '+(done?'done':overdue?'overdue':'open')+'">'+(done?'Completed':overdue?'Overdue':'Open')+'</div><button class="task-delete deleteTask" data-id="'+t.id+'" data-workspace="'+counterpartId+'" title="Delete task">×</button></div>';
   }).join(''):'<div class="workspace-empty">No tasks on their checklist yet.</div>';
   const calendarHtml=upcoming.length?upcoming.map(function(x){
     const m=x.meeting;
@@ -433,7 +490,7 @@ function openCounterpartWorkspace(id){
   host.innerHTML=counterpartWorkspaceHtml(id);
   const close=document.getElementById('counterpartWorkspaceClose');if(close)close.onclick=closeCounterpartWorkspace;
   const bg=document.getElementById('counterpartWorkspaceBackdrop');if(bg)bg.onclick=function(e){if(e.target.id==='counterpartWorkspaceBackdrop')closeCounterpartWorkspace()};
-  document.querySelectorAll('.counterpart-workspace .assignTask').forEach(function(btn){btn.onclick=async function(){await assignCounterpartTask(btn.dataset.profile,btn.dataset.name);openCounterpartWorkspace(id)}});
+  document.querySelectorAll('.counterpart-workspace .assignTask').forEach(function(btn){btn.onclick=function(){assignCounterpartTask(btn.dataset.profile,btn.dataset.name,id)}});
   document.querySelectorAll('.counterpart-workspace .deleteTask').forEach(function(btn){btn.onclick=deleteTask});
 }
 function closeCounterpartWorkspace(){const host=document.getElementById('counterpartWorkspaceHost');if(host)host.innerHTML=''}
@@ -565,15 +622,21 @@ async function deleteResource(e){
 }
 
 function messagesHtml(){
+  const leader=me.role==='admin'||me.role==='council_sgan';
   const people=state.profiles.filter(function(p){
     if(p.id===me.id||p.council_id!==me.council_id)return false;
     if(me.role==='counterpart')return p.role==='admin'||p.role==='council_sgan';
     return true;
   });
-  if(!activeThread&&people[0])activeThread=people[0].id;
-  const other=profile(activeThread);
-  const msgs=state.messages.filter(function(m){return (m.sender_id===me.id&&m.recipient_id===activeThread)||(m.sender_id===activeThread&&m.recipient_id===me.id)});
-  return '<section class="card"><div class="card-head"><div><div class="eyebrow">MESSAGES</div><h2>Council chat</h2></div></div><div class="message-layout"><div class="thread-list">'+people.map(function(p){return '<button class="thread-btn '+(activeThread===p.id?'active':'')+'" data-thread="'+p.id+'"><strong>'+esc(p.display_name)+'</strong><span>'+roleLabel(p.role)+'</span></button>'}).join('')+'</div><div class="chat"><div class="messages">'+(msgs.length?msgs.map(function(m){return '<div class="bubble '+(m.sender_id===me.id?'mine':'')+'">'+esc(m.body)+'<small>'+new Date(m.created_at).toLocaleString()+'</small></div>'}).join(''):'<div class="empty">Start the conversation.</div>')+'</div>'+(other?'<form id="chatForm" class="chat-form"><input id="chatText" placeholder="Message '+esc(other.display_name)+'..." required><button class="primary">Send</button></form>':'')+'</div></div></section>';
+  if(!activeThread)activeThread=leader?'__SGAN_GROUP__':(people[0]?people[0].id:null);
+  const isGroup=activeThread==='__SGAN_GROUP__';
+  const other=isGroup?null:profile(activeThread);
+  const msgs=isGroup?(state.sganGroupMessages||[]):state.messages.filter(function(m){return (m.sender_id===me.id&&m.recipient_id===activeThread)||(m.sender_id===activeThread&&m.recipient_id===me.id)});
+  const groupBtn=leader?'<button class="thread-btn group-thread '+(isGroup?'active':'')+'" data-thread="__SGAN_GROUP__"><strong>Council S\'ganim</strong><span>All council S\'ganim · Group chat</span></button>':'';
+  return '<section class="card messages-card"><div class="card-head"><div><div class="eyebrow">MESSAGES</div><h2>'+(isGroup?'Council S\'ganim group chat':'Council chat')+'</h2></div></div><div class="message-layout"><div class="thread-list">'+groupBtn+people.map(function(p){return '<button class="thread-btn '+(activeThread===p.id?'active':'')+'" data-thread="'+p.id+'"><strong>'+esc(p.display_name)+'</strong><span>'+roleLabel(p.role)+'</span></button>'}).join('')+'</div><div class="chat"><div class="messages">'+(msgs.length?msgs.map(function(m){
+    const sender=profile(m.sender_id);
+    return '<div class="bubble '+(m.sender_id===me.id?'mine':'')+'">'+(isGroup?'<b class="bubble-sender">'+esc(sender?sender.display_name:'Council S\'gan')+'</b>':'')+esc(m.body)+'<small>'+new Date(m.created_at).toLocaleString()+'</small></div>';
+  }).join(''):'<div class="empty">Start the conversation.</div>')+'</div>'+((isGroup&&leader)||other?'<form id="chatForm" class="chat-form"><input id="chatText" placeholder="'+(isGroup?'Message all Council S\'ganim...':'Message '+esc(other.display_name)+'...')+'" required><button class="primary">Send</button></form>':'')+'</div></div></section>';
 }
 
 function counterpartQuickHtml(){
@@ -589,8 +652,13 @@ function wireView(){
   document.querySelectorAll('.assignTask').forEach(function(btn){btn.onclick=function(){assignCounterpartTask(btn.dataset.profile,btn.dataset.name)}});
   document.querySelectorAll('.openWorkspace').forEach(function(btn){btn.onclick=function(){openCounterpartWorkspace(btn.dataset.id)}});
   document.querySelectorAll('[data-thread]').forEach(function(btn){btn.onclick=function(){activeThread=btn.dataset.thread;renderShell()}});
+  document.querySelectorAll('.openCouncil').forEach(function(btn){btn.onclick=function(){activeCouncilBrowseId=btn.dataset.council;renderShell()}});
+  const councilBack=document.getElementById('councilBrowserBack');if(councilBack)councilBack.onclick=function(){activeCouncilBrowseId=null;renderShell()};
+  document.querySelectorAll('.browseProgramPdf').forEach(function(btn){btn.onclick=async function(){const r=await sb.storage.from('program-planning-forms').createSignedUrl(btn.dataset.path,300);if(r.error){alert(r.error.message);return;}window.open(r.data.signedUrl,'_blank')}});
+  document.querySelectorAll('.browseResourceFile').forEach(function(btn){btn.onclick=async function(){const r=await sb.storage.from('shared-resources').createSignedUrl(btn.dataset.path,300);if(r.error){alert(r.error.message);return;}window.open(r.data.signedUrl,'_blank')}});
   const chat=document.getElementById('chatForm');if(chat)chat.onsubmit=sendMessage;
   const mf=document.getElementById('meetingForm');if(mf)mf.onsubmit=addMeeting;
+  const mc=document.getElementById('mCounterpart');if(mc)mc.onchange=function(){const wrap=document.getElementById('mOtherWrap');if(wrap)wrap.style.display=mc.value==='__OTHER__'?'block':'none'};
   const prevWeek=document.getElementById('prevWeekBtn');if(prevWeek)prevWeek.onclick=function(){scheduleWeekOffset--;renderShell()};
   const todayWeek=document.getElementById('todayWeekBtn');if(todayWeek)todayWeek.onclick=function(){scheduleWeekOffset=0;renderShell()};
   const nextWeek=document.getElementById('nextWeekBtn');if(nextWeek)nextWeek.onclick=function(){scheduleWeekOffset++;renderShell()};
@@ -686,40 +754,49 @@ async function deleteTask(e){
   if(workspaceId&&document.getElementById('counterpartWorkspaceHost'))openCounterpartWorkspace(workspaceId);
   else renderShell();
 }
-async function assignCounterpartTask(profileId,name){
-  const title=prompt('Task for '+name+':');
-  if(!title||!title.trim())return false;
-  const deadline=prompt('Deadline for '+name+' (YYYY-MM-DD), or leave blank for no deadline:')||'';
-  if(deadline&&!/^\d{4}-\d{2}-\d{2}$/.test(deadline)){alert('Use YYYY-MM-DD for the deadline.');return false;}
-  const r=await sb.from('check_templates').insert({
-    council_id:me.council_id,
-    owner_profile_id:profileId,
-    assigned_by:me.id,
-    title:title.trim(),
-    group_name:'Assigned Tasks',
-    cadence:'once',
-    due_date:deadline||null,
-    active:true
-  });
-  if(r.error){alert(r.error.message);return false;}
-  await loadAll();
-  alert('Task added to '+name+'\'s checklist'+(deadline?' with a deadline of '+niceDate(deadline):'')+'.');
-  return true;
+function assignCounterpartTask(profileId,name,workspaceId){
+  openTaskCreator(profileId,name,workspaceId||'');
 }
-async function addPersonalTask(){
-  const title=prompt('Task name:');
-  if(!title||!title.trim())return;
-  const r=await sb.from('check_templates').insert({
-    council_id:me.council_id,
-    owner_profile_id:me.id,
-    title:title.trim(),
-    group_name:'My Tasks',
-    cadence:'once',
-    active:true
-  });
-  if(r.error){alert(r.error.message);return;}
-  await loadAll();renderShell();
+function addPersonalTask(){
+  openTaskCreator(me.id,'Your task','');
 }
+function openTaskCreator(profileId,name,workspaceId){
+  const host=document.getElementById('taskModalHost');if(!host)return;
+  const assigned=profileId!==me.id;
+  host.innerHTML='<div class="task-modal-backdrop" id="taskModalBackdrop"><section class="task-modal"><div class="task-modal-head"><div><div class="eyebrow">'+(assigned?'ASSIGN TASK':'NEW TASK')+'</div><h2>'+esc(name)+'</h2><p>Create it once or make it repeat automatically.</p></div><button class="modal-close" id="taskModalClose">×</button></div><form id="taskCreateForm"><label>Task name<input id="taskCreateTitle" required placeholder="What needs to get done?"></label><div class="task-create-grid"><label>Repeats<select id="taskCreateCadence"><option value="once">One time</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="biweekly">Every other week</option><option value="monthly">Monthly</option></select></label><label id="taskDueLabel">Due date<input id="taskCreateDue" type="date"></label><label id="taskUntilLabel" style="display:none">Repeat until<input id="taskCreateUntil" type="date"></label></div><div class="task-modal-footer"><button type="button" class="ghost" id="taskCancelBtn">Cancel</button><button class="primary">'+(assigned?'Assign task →':'Add task →')+'</button></div></form></section></div>';
+  const close=function(){host.innerHTML=''};
+  document.getElementById('taskModalClose').onclick=close;
+  document.getElementById('taskCancelBtn').onclick=close;
+  document.getElementById('taskModalBackdrop').onclick=function(e){if(e.target.id==='taskModalBackdrop')close()};
+  const cadence=document.getElementById('taskCreateCadence');
+  cadence.onchange=function(){
+    const recurring=cadence.value!=='once';
+    document.getElementById('taskDueLabel').style.display=recurring?'none':'block';
+    document.getElementById('taskUntilLabel').style.display=recurring?'block':'none';
+  };
+  document.getElementById('taskCreateForm').onsubmit=async function(e){
+    e.preventDefault();
+    const title=v('taskCreateTitle').trim(),cad=v('taskCreateCadence');
+    const row={
+      council_id:me.council_id,
+      owner_profile_id:profileId,
+      assigned_by:assigned?me.id:null,
+      title:title,
+      group_name:assigned?'Assigned Tasks':'My Tasks',
+      cadence:cad,
+      due_date:cad==='once'?(v('taskCreateDue')||null):null,
+      until_date:cad==='once'?null:(v('taskCreateUntil')||null),
+      active:true
+    };
+    const r=await sb.from('check_templates').insert(row);
+    if(r.error){alert(r.error.message);return;}
+    await loadAll();
+    close();
+    renderShell();
+    if(workspaceId)setTimeout(function(){openCounterpartWorkspace(workspaceId)},0);
+  };
+}
+
 async function createCounterpartAccount(id){
   const cp=state.counterparts.find(function(x){return x.id===id});if(!cp)return;
   const email=prompt('Email for '+cp.name+':');if(!email)return;
@@ -738,7 +815,7 @@ async function addCouncil(e){e.preventDefault();const r=await sb.from('councils'
 async function addCounterpart(e){
   e.preventDefault();
   const councilId=me.role==='admin'?(v('cpCouncil')||me.council_id):me.council_id;
-  const row={council_id:councilId,name:v('cpName'),chapter:v('cpChapter'),notes:v('cpNotes')};
+  const row={council_id:councilId,name:v('cpName'),chapter:v('cpChapter'),notes:v('cpNotes'),is_focus_chapter:!!(document.getElementById('cpFocus')&&document.getElementById('cpFocus').checked)};
   if(!row.name||!row.chapter){alert('Name and chapter are required.');return;}
   const r=await sb.from('counterparts').insert(row);
   if(r.error){alert(r.error.message);return;}
@@ -759,7 +836,24 @@ async function submitProgram(e){
   if(r.error){alert(r.error.message);return;}
   await loadAll();renderShell();
 }
-async function addMeeting(e){e.preventDefault();const contact=v('mCounterpart');const cp=contact&&contact!=='__GJR_STAFF__'?state.counterparts.find(function(x){return x.id===contact}):null;const row={council_id:me.council_id,title:v('mTitle'),mode:v('mMode'),start_date:v('mDate'),start_time:v('mStart'),end_time:v('mEnd')||null,recurrence:v('mRepeat'),url:v('mUrl'),location:v('mLocation'),owner_profile_id:me.id,counterpart_id:cp?cp.id:null,attendee_profile_id:cp&&cp.linked_profile_id?cp.linked_profile_id:null,contact_type:contact==='__GJR_STAFF__'?'gjr_staff':cp?'counterpart':'none',contact_name:contact==='__GJR_STAFF__'?'GJR Staff':cp?cp.name:''};const r=await sb.from('meetings').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell()}
+async function addMeeting(e){
+  e.preventDefault();
+  const contact=v('mCounterpart');
+  const isOther=contact==='__OTHER__';
+  const cp=contact&&contact!=='__GJR_STAFF__'&&!isOther?state.counterparts.find(function(x){return x.id===contact}):null;
+  const otherName=isOther?v('mOther').trim():'';
+  if(isOther&&!otherName){alert('Type who you are meeting with.');return;}
+  const row={
+    council_id:me.council_id,title:v('mTitle'),mode:v('mMode'),start_date:v('mDate'),start_time:v('mStart'),end_time:v('mEnd')||null,
+    recurrence:v('mRepeat'),url:v('mUrl'),location:v('mLocation'),owner_profile_id:me.id,
+    counterpart_id:cp?cp.id:null,attendee_profile_id:cp&&cp.linked_profile_id?cp.linked_profile_id:null,
+    contact_type:contact==='__GJR_STAFF__'?'gjr_staff':isOther?'other':cp?'counterpart':'none',
+    contact_name:contact==='__GJR_STAFF__'?'GJR Staff':isOther?otherName:cp?cp.name:''
+  };
+  const r=await sb.from('meetings').insert(row);
+  if(r.error){alert(r.error.message);return;}
+  await loadAll();renderShell();
+}
 function openMeetingModal(meetingId,date){
   const m=state.meetings.find(function(x){return x.id===meetingId});if(!m)return;
   const host=document.getElementById('meetingModalHost');if(!host)return;
@@ -857,11 +951,27 @@ async function deleteLeaderNote(e){
   await loadAll();renderShell();
 }
 async function requestOne(e){e.preventDefault();const row={council_id:me.council_id,counterpart_profile_id:me.id,council_sgan_profile_id:v('oneLeader'),requested_date:v('oneDate'),requested_start:v('oneStart'),requested_end:v('oneEnd')||null,notes:v('oneNotes')};const r=await sb.from('one_on_one_requests').insert(row);if(r.error){alert(r.error.message);return;}await loadAll();renderShell();alert('1:1 request sent.')}
-async function sendMessage(e){e.preventDefault();const body=v('chatText');if(!body||!activeThread)return;const r=await sb.from('messages').insert({council_id:me.council_id,sender_id:me.id,recipient_id:activeThread,body:body});if(r.error){alert(r.error.message);return;}document.getElementById('chatText').value='';await loadAll();renderShell()}
+async function sendMessage(e){
+  e.preventDefault();
+  const body=v('chatText');if(!body||!activeThread)return;
+  const r=activeThread==='__SGAN_GROUP__'
+    ? await sb.from('council_sgan_group_messages').insert({sender_id:me.id,body:body})
+    : await sb.from('messages').insert({council_id:me.council_id,sender_id:me.id,recipient_id:activeThread,body:body});
+  if(r.error){alert(r.error.message);return;}
+  document.getElementById('chatText').value='';
+  await loadAll();renderShell();
+}
 
 function subscribeMessages(){
   if(!sb||!me)return;
-  sb.channel('gjr-messages-'+me.id).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},async function(payload){const m=payload.new;if(m.sender_id===me.id||m.recipient_id===me.id){await loadAll();if(activeView==='messages')renderShell()}}).subscribe();
+  sb.channel('gjr-messages-'+me.id)
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},async function(payload){
+      const m=payload.new;if(m.sender_id===me.id||m.recipient_id===me.id){await loadAll();if(activeView==='messages')renderShell()}
+    })
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'council_sgan_group_messages'},async function(){
+      if(me.role==='admin'||me.role==='council_sgan'){await loadAll();if(activeView==='messages')renderShell()}
+    })
+    .subscribe();
 }
 
 function profile(id){return state.profiles.find(function(p){return p.id===id})}
