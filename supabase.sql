@@ -505,3 +505,105 @@ create table if not exists resources (
   counterpart_ids uuid[] not null default '{}'::uuid[],
   created_at timestamptz not null default now()
 );
+
+
+-- Regional collaboration additions
+alter table counterparts
+add column if not exists is_focus_chapter boolean not null default false;
+
+create table if not exists council_sgan_group_messages (
+  id uuid primary key default gen_random_uuid(),
+  sender_id uuid not null references profiles(id) on delete cascade,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table council_sgan_group_messages enable row level security;
+grant select, insert on council_sgan_group_messages to authenticated;
+
+drop policy if exists "leaders read sgan group chat" on council_sgan_group_messages;
+create policy "leaders read sgan group chat"
+on council_sgan_group_messages for select to authenticated
+using (public.current_profile_role() in ('admin','council_sgan'));
+
+drop policy if exists "leaders send sgan group chat" on council_sgan_group_messages;
+create policy "leaders send sgan group chat"
+on council_sgan_group_messages for insert to authenticated
+with check (
+  sender_id = auth.uid()
+  and public.current_profile_role() in ('admin','council_sgan')
+);
+
+-- Council S'ganim can browse other councils' operational data read-only.
+drop policy if exists "read counterparts" on counterparts;
+create policy "read counterparts"
+on counterparts for select to authenticated
+using (
+  public.current_profile_role() in ('admin','council_sgan')
+  or council_id = public.current_council_id()
+  or linked_profile_id = auth.uid()
+);
+
+drop policy if exists "read own or managed counterpart check templates" on check_templates;
+create policy "read own or managed counterpart check templates"
+on check_templates for select to authenticated
+using (
+  owner_profile_id = auth.uid()
+  or (
+    public.current_profile_role() in ('admin','council_sgan')
+    and exists (
+      select 1 from profiles target
+      where target.id = check_templates.owner_profile_id
+        and target.role = 'counterpart'
+    )
+  )
+);
+
+drop policy if exists "read own or managed counterpart completions" on check_completions;
+create policy "read own or managed counterpart completions"
+on check_completions for select to authenticated
+using (
+  profile_id = auth.uid()
+  or (
+    public.current_profile_role() in ('admin','council_sgan')
+    and exists (
+      select 1 from profiles target
+      where target.id = check_completions.profile_id
+        and target.role = 'counterpart'
+    )
+  )
+);
+
+drop policy if exists "read participating or managed counterpart meetings" on meetings;
+create policy "read participating or managed counterpart meetings"
+on meetings for select to authenticated
+using (
+  owner_profile_id = auth.uid()
+  or attendee_profile_id = auth.uid()
+  or public.current_profile_role() in ('admin','council_sgan')
+);
+
+drop policy if exists "program forms read" on program_planning_forms;
+create policy "program forms read"
+on program_planning_forms for select to authenticated
+using (
+  submitted_by = auth.uid()
+  or public.current_profile_role() in ('admin','council_sgan')
+);
+
+drop policy if exists "resource read access" on resources;
+create policy "resource read access"
+on resources for select to authenticated
+using (
+  created_by = auth.uid()
+  or public.current_profile_role() in ('admin','council_sgan')
+  or (
+    public.current_profile_role() = 'counterpart'
+    and council_id = public.current_council_id()
+    and exists (
+      select 1 from counterparts c
+      where c.linked_profile_id = auth.uid()
+        and (resources.share_all or c.id = any(resources.counterpart_ids))
+    )
+  )
+);
